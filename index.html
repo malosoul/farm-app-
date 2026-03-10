@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="農場管理">
+<title>農場管理アプリ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #f4f6f4; font-family: 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
+input, select, textarea, button { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const CROPS = ["いちご","トマト","きゅうり","ほうれん草","春菊","ケール","バジル","パセリ","コリアンダー","チャイブ","ディル","韓国唐辛子","タイ唐辛子","インド唐辛子","ハラペーニョ","その他"];
+const WORK_TYPES = ["播種","定植","収穫","防除","施肥","灌水","整枝・誘引","草取り","土づくり","出荷準備","その他"];
+const CHANNELS = ["中央青果（市場）","たじまんま","直売","その他"];
+const TABS = [
+  { id:"diary",   label:"作業日誌",  icon:"📝" },
+  { id:"calendar",label:"カレンダー",icon:"📅" },
+  { id:"shipment",label:"出荷記録",  icon:"📦" },
+  { id:"agrochem",label:"農薬・資材",icon:"🧪" },
+  { id:"todo",    label:"ToDo",     icon:"✅" },
+  { id:"ai",      label:"作付け相談",icon:"🌱" },
+];
+const TC = { diary:"#2E7D32",calendar:"#1565C0",shipment:"#0277BD",agrochem:"#6A1B9A",todo:"#E65100",ai:"#00695C" };
+
+const today = () => new Date().toISOString().split("T")[0];
+const fmtDate = d => { const dt=new Date(d); return `${dt.getFullYear()}年${dt.getMonth()+1}月${dt.getDate()}日`; };
+
+function useStorage(key, init) {
+  const [val, setVal] = useState(() => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):init; } catch { return init; } });
+  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }, [key, val]);
+  return [val, setVal];
+}
+
+const INP = {width:"100%",padding:"10px 12px",borderRadius:10,border:"1.5px solid #e0e0e0",fontSize:14,boxSizing:"border-box",marginBottom:10,background:"#fafafa"};
+const chip = (active, color="#2E7D32") => ({display:"inline-block",padding:"5px 12px",borderRadius:20,margin:"3px",fontSize:12,fontWeight:600,cursor:"pointer",background:active?color:"#f0f0f0",color:active?"#fff":"#555",border:"none"});
+const PB = (color="#2E7D32") => ({width:"100%",padding:"12px",borderRadius:12,border:"none",background:color,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",marginTop:4});
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"flex-end"}}>
+      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",width:"100%",maxHeight:"90vh",overflowY:"auto",padding:"20px 16px 32px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <h2 style={{margin:0,fontSize:17,fontWeight:700}}>{title}</h2>
+          <button onClick={onClose} style={{background:"#f0f0f0",border:"none",borderRadius:20,width:32,height:32,fontSize:18,cursor:"pointer"}}>×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Diary({ records, setRecords }) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [form, setForm] = useState({date:today(),crop:"",workType:"",hours:"",memo:"",weather:"晴れ"});
+  const save = () => {
+    if(!form.crop||!form.workType) return;
+    setRecords(r=>[{id:Date.now(),...form},...r]);
+    setOpen(false);
+    setForm({date:today(),crop:"",workType:"",hours:"",memo:"",weather:"晴れ"});
+  };
+  const filtered = filter ? records.filter(r=>r.crop===filter) : records;
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <select style={{...INP,width:"auto",marginBottom:0,fontSize:13}} value={filter} onChange={e=>setFilter(e.target.value)}>
+          <option value="">すべての作物</option>
+          {CROPS.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <button onClick={()=>setOpen(true)} style={{background:TC.diary,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 記録</button>
+      </div>
+      {filtered.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>作業記録がありません</div>}
+      {filtered.map(r=>(
+        <div key={r.id} style={{background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <div>
+              <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}　{r.weather}</span>
+              <div style={{fontWeight:700,fontSize:15,marginTop:2}}>{r.crop}</div>
+              <div style={{fontSize:13,color:"#555",marginTop:1}}>{r.workType}{r.hours?`　${r.hours}時間`:""}</div>
+              {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4,lineHeight:1.5}}>{r.memo}</div>}
+            </div>
+            <button onClick={()=>setRecords(rs=>rs.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+          </div>
+        </div>
+      ))}
+      {open&&<Modal title="作業を記録" onClose={()=>setOpen(false)}>
+        <label style={{fontSize:12,color:"#555"}}>日付</label>
+        <input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>天気</label>
+        <div style={{marginBottom:10}}>{["晴れ","曇り","雨","雪"].map(w=><button key={w} style={chip(form.weather===w)} onClick={()=>setForm({...form,weather:w})}>{w}</button>)}</div>
+        <label style={{fontSize:12,color:"#555"}}>作物 *</label>
+        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}>
+          <option value="">選択してください</option>
+          {CROPS.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <label style={{fontSize:12,color:"#555"}}>作業内容 *</label>
+        <div style={{marginBottom:10}}>{WORK_TYPES.map(w=><button key={w} style={chip(form.workType===w)} onClick={()=>setForm({...form,workType:w})}>{w}</button>)}</div>
+        <label style={{fontSize:12,color:"#555"}}>作業時間（時間）</label>
+        <input type="number" style={INP} placeholder="例：2.5" value={form.hours} onChange={e=>setForm({...form,hours:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>メモ</label>
+        <textarea style={{...INP,height:80,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
+        <button style={PB(TC.diary)} onClick={save}>保存する</button>
+      </Modal>}
+    </div>
+  );
+}
+
+function Calendar({ diary, shipment }) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [selected, setSelected] = useState(null);
+  const daysInMonth = new Date(year,month+1,0).getDate();
+  const firstDay = new Date(year,month,1).getDay();
+  const evByDay = {};
+  [...diary,...shipment].forEach(r=>{
+    const d=new Date(r.date);
+    if(d.getFullYear()===year&&d.getMonth()===month){
+      const day=d.getDate();
+      if(!evByDay[day]) evByDay[day]=[];
+      evByDay[day].push(r);
+    }
+  });
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <button onClick={()=>{if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);}} style={{background:"#f0f0f0",border:"none",borderRadius:20,width:36,height:36,fontSize:18,cursor:"pointer"}}>‹</button>
+        <span style={{fontWeight:700,fontSize:17}}>{year}年{month+1}月</span>
+        <button onClick={()=>{if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1);}} style={{background:"#f0f0f0",border:"none",borderRadius:20,width:36,height:36,fontSize:18,cursor:"pointer"}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:6}}>
+        {["日","月","火","水","木","金","土"].map((d,i)=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:i===0?"#e53935":i===6?"#1565C0":"#888",padding:"4px 0"}}>{d}</div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+        {Array.from({length:firstDay}).map((_,i)=><div key={"e"+i}/>)}
+        {Array.from({length:daysInMonth}).map((_,i)=>{
+          const day=i+1,events=evByDay[day];
+          const isToday=day===now.getDate()&&month===now.getMonth()&&year===now.getFullYear();
+          return (
+            <div key={day} onClick={()=>events&&setSelected(day)} style={{borderRadius:10,padding:"5px 2px",textAlign:"center",background:isToday?"#E8F5E9":events?"#F1F8E9":"#fafafa",border:isToday?"2px solid #2E7D32":"1.5px solid #eee",cursor:events?"pointer":"default",minHeight:42}}>
+              <div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?"#2E7D32":"#333"}}>{day}</div>
+              {events&&<div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:2,marginTop:2}}>{events.slice(0,3).map((e,j)=><div key={j} style={{width:5,height:5,borderRadius:3,background:e.channel?"#1565C0":"#2E7D32"}}/>)}</div>}
+            </div>
+          );
+        })}
+      </div>
+      {selected&&<Modal title={`${month+1}月${selected}日の記録`} onClose={()=>setSelected(null)}>
+        {(evByDay[selected]||[]).map((e,i)=>(
+          <div key={i} style={{background:"#f8f8f8",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+            {e.channel
+              ?<><div style={{fontWeight:700,color:"#1565C0",fontSize:13}}>📦 出荷記録</div><div style={{fontSize:13,marginTop:4}}>{e.crop}　{e.channel}　{e.amount}{e.unit}{e.price?`　¥${Number(e.price).toLocaleString()}`:""}</div></>
+              :<><div style={{fontWeight:700,color:"#2E7D32",fontSize:13}}>📝 {e.workType}</div><div style={{fontSize:13,marginTop:4}}>{e.crop}{e.hours?`　${e.hours}時間`:""}</div>{e.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{e.memo}</div>}</>
+            }
+          </div>
+        ))}
+      </Modal>}
+    </div>
+  );
+}
+
+function Shipment({ records, setRecords }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
+  const save = () => {
+    if(!form.crop||!form.channel||!form.amount) return;
+    setRecords(r=>[{id:Date.now(),...form},...r]);
+    setOpen(false);
+    setForm({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
+  };
+  const totCh={};
+  records.forEach(r=>{ totCh[r.channel]=(totCh[r.channel]||0)+Number(r.price||0); });
+  const grand=Object.values(totCh).reduce((a,b)=>a+b,0);
+  return (
+    <div>
+      {grand>0&&<div style={{background:"linear-gradient(135deg,#1565C0,#1976D2)",borderRadius:16,padding:"14px 16px",marginBottom:14,color:"#fff"}}>
+        <div style={{fontSize:12,opacity:0.8}}>累計売上</div>
+        <div style={{fontSize:26,fontWeight:700}}>¥{grand.toLocaleString()}</div>
+        <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>{Object.entries(totCh).map(([ch,amt])=><span key={ch} style={{background:"rgba(255,255,255,0.2)",borderRadius:10,padding:"3px 10px",fontSize:11}}>{ch}：¥{amt.toLocaleString()}</span>)}</div>
+      </div>}
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button onClick={()=>setOpen(true)} style={{background:TC.shipment,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 出荷記録</button>
+      </div>
+      {records.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>出荷記録がありません</div>}
+      {records.map(r=>(
+        <div key={r.id} style={{background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <div>
+              <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}</span>
+              <div style={{fontWeight:700,fontSize:15,marginTop:2}}>{r.crop}</div>
+              <div style={{fontSize:13,color:"#555"}}>{r.channel}　{r.amount}{r.unit}</div>
+              {r.price&&<div style={{fontSize:14,fontWeight:700,color:"#1565C0",marginTop:2}}>¥{Number(r.price).toLocaleString()}</div>}
+              {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{r.memo}</div>}
+            </div>
+            <button onClick={()=>setRecords(rs=>rs.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+          </div>
+        </div>
+      ))}
+      {open&&<Modal title="出荷を記録" onClose={()=>setOpen(false)}>
+        <label style={{fontSize:12,color:"#555"}}>日付</label>
+        <input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>作物 *</label>
+        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">選択してください</option>{CROPS.map(c=><option key={c}>{c}</option>)}</select>
+        <label style={{fontSize:12,color:"#555"}}>出荷先 *</label>
+        <div style={{marginBottom:10}}>{CHANNELS.map(ch=><button key={ch} style={chip(form.channel===ch,"#1565C0")} onClick={()=>setForm({...form,channel:ch})}>{ch}</button>)}</div>
+        <div style={{display:"flex",gap:8}}>
+          <div style={{flex:2}}><label style={{fontSize:12,color:"#555"}}>数量 *</label><input type="number" style={INP} value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/></div>
+          <div style={{flex:1}}><label style={{fontSize:12,color:"#555"}}>単位</label><select style={INP} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>{["ケース","袋","kg","本","束","個"].map(u=><option key={u}>{u}</option>)}</select></div>
+        </div>
+        <label style={{fontSize:12,color:"#555"}}>金額（円）</label>
+        <input type="number" style={INP} placeholder="例：15000" value={form.price} onChange={e=>setForm({...form,price:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>メモ</label>
+        <input style={INP} placeholder="規格・等級など" value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
+        <button style={PB("#1565C0")} onClick={save}>保存する</button>
+      </Modal>}
+    </div>
+  );
+}
+
+function Agrochem({ records, setRecords }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({date:today(),type:"農薬",name:"",crop:"",amount:"",unit:"ml",dilution:"",memo:""});
+  const save = () => {
+    if(!form.name||!form.crop) return;
+    setRecords(r=>[{id:Date.now(),...form},...r]);
+    setOpen(false);
+    setForm({date:today(),type:"農薬",name:"",crop:"",amount:"",unit:"ml",dilution:"",memo:""});
+  };
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button onClick={()=>setOpen(true)} style={{background:TC.agrochem,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 使用記録</button>
+      </div>
+      {records.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>使用記録がありません</div>}
+      {records.map(r=>(
+        <div key={r.id} style={{background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <div>
+              <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}</span>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
+                <span style={{background:r.type==="農薬"?"#EDE7F6":"#E8F5E9",color:r.type==="農薬"?"#6A1B9A":"#2E7D32",borderRadius:10,padding:"2px 8px",fontSize:11,fontWeight:700}}>{r.type}</span>
+                <span style={{fontWeight:700,fontSize:15}}>{r.name}</span>
+              </div>
+              <div style={{fontSize:13,color:"#555",marginTop:2}}>{r.crop}　{r.amount}{r.unit}{r.dilution?`　希釈：${r.dilution}倍`:""}</div>
+              {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{r.memo}</div>}
+            </div>
+            <button onClick={()=>setRecords(rs=>rs.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+          </div>
+        </div>
+      ))}
+      {open&&<Modal title="農薬・資材を記録" onClose={()=>setOpen(false)}>
+        <label style={{fontSize:12,color:"#555"}}>日付</label>
+        <input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>種別</label>
+        <div style={{marginBottom:10}}>{["農薬","肥料","資材","その他"].map(t=><button key={t} style={chip(form.type===t,"#6A1B9A")} onClick={()=>setForm({...form,type:t})}>{t}</button>)}</div>
+        <label style={{fontSize:12,color:"#555"}}>品名 *</label>
+        <input style={INP} placeholder="例：ベストガード水溶剤" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>対象作物 *</label>
+        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">選択してください</option>{CROPS.map(c=><option key={c}>{c}</option>)}</select>
+        <div style={{display:"flex",gap:8}}>
+          <div style={{flex:2}}><label style={{fontSize:12,color:"#555"}}>使用量</label><input type="number" style={INP} value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/></div>
+          <div style={{flex:1}}><label style={{fontSize:12,color:"#555"}}>単位</label><select style={INP} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>{["ml","L","g","kg","袋"].map(u=><option key={u}>{u}</option>)}</select></div>
+        </div>
+        <label style={{fontSize:12,color:"#555"}}>希釈倍数</label>
+        <input type="number" style={INP} placeholder="例：1000" value={form.dilution} onChange={e=>setForm({...form,dilution:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>メモ</label>
+        <textarea style={{...INP,height:70,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
+        <button style={PB(TC.agrochem)} onClick={save}>保存する</button>
+      </Modal>}
+    </div>
+  );
+}
+
+function Todo({ todos, setTodos }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({title:"",crop:"",dueDate:"",priority:"中",memo:""});
+  const pC = {"高":"#E53935","中":"#FB8C00","低":"#43A047"};
+  const save = () => {
+    if(!form.title) return;
+    setTodos(t=>[{id:Date.now(),done:false,...form},...t]);
+    setOpen(false);
+    setForm({title:"",crop:"",dueDate:"",priority:"中",memo:""});
+  };
+  const toggle = id => setTodos(ts=>ts.map(t=>t.id===id?{...t,done:!t.done}:t));
+  const active=todos.filter(t=>!t.done), done=todos.filter(t=>t.done);
+  const overdue = t => t.dueDate&&new Date(t.dueDate)<new Date()&&!t.done;
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button onClick={()=>setOpen(true)} style={{background:TC.todo,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ タスク追加</button>
+      </div>
+      {active.length===0&&done.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>タスクがありません</div>}
+      {active.map(t=>(
+        <div key={t.id} style={{background:overdue(t)?"#FFF3E0":"#fff",borderRadius:14,padding:"12px 14px",marginBottom:8,boxShadow:"0 1px 6px rgba(0,0,0,0.07)",borderLeft:`4px solid ${pC[t.priority]}`}}>
+          <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+            <button onClick={()=>toggle(t.id)} style={{marginTop:2,width:22,height:22,borderRadius:11,border:`2px solid ${pC[t.priority]}`,background:"#fff",cursor:"pointer",flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,fontSize:14,color:overdue(t)?"#E65100":"#1a1a1a"}}>{t.title}</div>
+              <div style={{fontSize:12,color:"#888",marginTop:2}}>{t.crop&&<span>{t.crop}　</span>}{t.dueDate&&<span style={{color:overdue(t)?"#E53935":"#888"}}>期限：{fmtDate(t.dueDate)}{overdue(t)?" ⚠️":""}</span>}</div>
+              {t.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{t.memo}</div>}
+            </div>
+            <button onClick={()=>setTodos(ts=>ts.filter(x=>x.id!==t.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:16,cursor:"pointer"}}>🗑</button>
+          </div>
+        </div>
+      ))}
+      {done.length>0&&<>
+        <div style={{fontSize:12,color:"#aaa",fontWeight:700,marginTop:16,marginBottom:8}}>完了済み ({done.length})</div>
+        {done.map(t=>(
+          <div key={t.id} style={{background:"#f8f8f8",borderRadius:14,padding:"10px 14px",marginBottom:6,opacity:0.6}}>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <button onClick={()=>toggle(t.id)} style={{width:22,height:22,borderRadius:11,border:"none",background:"#43A047",cursor:"pointer",flexShrink:0,color:"#fff",fontSize:12}}>✓</button>
+              <span style={{fontSize:13,textDecoration:"line-through",color:"#888",flex:1}}>{t.title}</span>
+              <button onClick={()=>setTodos(ts=>ts.filter(x=>x.id!==t.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:14,cursor:"pointer"}}>🗑</button>
+            </div>
+          </div>
+        ))}
+      </>}
+      {open&&<Modal title="タスクを追加" onClose={()=>setOpen(false)}>
+        <label style={{fontSize:12,color:"#555"}}>タスク名 *</label>
+        <input style={INP} placeholder="例：トマト苗の発注" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>関連作物</label>
+        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">（任意）</option>{CROPS.map(c=><option key={c}>{c}</option>)}</select>
+        <label style={{fontSize:12,color:"#555"}}>優先度</label>
+        <div style={{marginBottom:10}}>{["高","中","低"].map(p=><button key={p} style={chip(form.priority===p,pC[p])} onClick={()=>setForm({...form,priority:p})}>{p}</button>)}</div>
+        <label style={{fontSize:12,color:"#555"}}>期限</label>
+        <input type="date" style={INP} value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/>
+        <label style={{fontSize:12,color:"#555"}}>メモ</label>
+        <textarea style={{...INP,height:70,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
+        <button style={PB(TC.todo)} onClick={save}>追加する</button>
+      </Modal>}
+    </div>
+  );
+}
+
+function AiAdvisor() {
+  const [veggie, setVeggie] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+  const ask = async () => {
+    if(!veggie.trim()||loading) return;
+    setLoading(true); setResult(null);
+    const prompt = `あなたは日本の農業専門家です。兵庫県豊岡市（但馬地域）の農家からの質問に答えてください。\n野菜・ハーブ名：「${veggie}」\n以下の形式でJSONのみを返してください（前後に説明文やマークダウン記号は不要）：\n{"name":"作物名","house":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"ハウス栽培ポイント50字以内"},"field":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"露地栽培ポイント50字以内"},"tip":"但馬地域アドバイス80字以内","difficulty":"初級／中級／上級"}\n定植不要な作物はtransplantを「直播」としてください。`;
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
+      const data = await res.json();
+      const text = data.content.map(c=>c.text||"").join("");
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setResult(parsed);
+      setHistory(h=>[{veggie,result:parsed,id:Date.now()},...h.slice(0,9)]);
+    } catch { setResult({error:true}); }
+    setLoading(false); setVeggie("");
+  };
+  const dC={"初級":"#43A047","中級":"#FB8C00","上級":"#E53935"};
+  return (
+    <div>
+      <div style={{background:"linear-gradient(135deg,#00695C,#00897B)",borderRadius:16,padding:"16px",marginBottom:16,color:"#fff"}}>
+        <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🌱 作付け時期アドバイザー</div>
+        <div style={{fontSize:12,opacity:0.8}}>育てたい野菜・ハーブ名を入力すると、但馬地域向けにハウス・露地の作付け時期を教えます</div>
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <input style={{...INP,marginBottom:0,flex:1}} placeholder="例：ズッキーニ、しそ…" value={veggie} onChange={e=>setVeggie(e.target.value)} onKeyDown={e=>e.key==="Enter"&&ask()}/>
+        <button onClick={ask} disabled={loading||!veggie.trim()} style={{background:loading?"#aaa":TC.ai,color:"#fff",border:"none",borderRadius:12,padding:"0 16px",fontWeight:700,fontSize:14,cursor:loading?"not-allowed":"pointer",flexShrink:0}}>{loading?"調べ中…":"相談"}</button>
+      </div>
+      {loading&&<div style={{textAlign:"center",padding:"40px 0",color:"#00695C"}}><div style={{fontSize:36,marginBottom:8}}>🌿</div><div style={{fontSize:14}}>AIが調べています...</div></div>}
+      {result&&!result.error&&(
+        <div style={{background:"#fff",borderRadius:16,padding:"16px",boxShadow:"0 2px 12px rgba(0,0,0,0.08)",marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <h3 style={{margin:0,fontSize:18,fontWeight:700,color:"#00695C"}}>{result.name}</h3>
+            <span style={{background:dC[result.difficulty]||"#888",color:"#fff",borderRadius:10,padding:"3px 10px",fontSize:11,fontWeight:700}}>{result.difficulty}</span>
+          </div>
+          {[["🏠 ハウス栽培",result.house,"#E0F2F1","#00695C"],["🌤 露地栽培",result.field,"#E8F5E9","#2E7D32"]].map(([label,data,bg,color])=>(
+            <div key={label} style={{background:bg,borderRadius:12,padding:"12px",marginBottom:10}}>
+              <div style={{fontWeight:700,color,fontSize:13,marginBottom:8}}>{label}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                {[["播種",data&&data.sowing],["定植",data&&data.transplant],["収穫",data&&data.harvest]].map(([k,v])=>(
+                  <div key={k} style={{background:"rgba(255,255,255,0.7)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
+                    <div style={{fontSize:10,color:"#888",marginBottom:2}}>{k}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"#1a1a1a"}}>{v||"―"}</div>
+                  </div>
+                ))}
+              </div>
+              {data&&data.notes&&<div style={{fontSize:11,color:"#555",marginTop:8,lineHeight:1.5}}>💡 {data.notes}</div>}
+            </div>
+          ))}
+          <div style={{background:"#FFF8E1",borderRadius:10,padding:"10px 12px",borderLeft:"3px solid #FB8C00"}}>
+            <div style={{fontSize:11,color:"#E65100",fontWeight:700,marginBottom:4}}>但馬地域アドバイス</div>
+            <div style={{fontSize:12,color:"#555",lineHeight:1.6}}>{result.tip}</div>
+          </div>
+        </div>
+      )}
+      {result&&result.error&&<div style={{background:"#FFF3E0",borderRadius:12,padding:"16px",textAlign:"center",color:"#E65100"}}><div style={{fontSize:24,marginBottom:8}}>⚠️</div><div style={{fontSize:13}}>取得に失敗しました。もう一度お試しください。</div></div>}
+      {history.length>0&&<>
+        <div style={{fontSize:12,color:"#aaa",fontWeight:700,marginBottom:8}}>最近の相談履歴</div>
+        {history.map(h=>(
+          <div key={h.id} onClick={()=>setResult(h.result)} style={{background:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><div style={{fontWeight:700,fontSize:14}}>{h.result.name}</div><div style={{fontSize:11,color:"#888",marginTop:2}}>収穫：{h.result.house&&h.result.house.harvest}</div></div>
+            <div style={{fontSize:20,color:"#ccc"}}>›</div>
+          </div>
+        ))}
+      </>}
+    </div>
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState("diary");
+  const [diary, setDiary] = useStorage("farm_diary",[]);
+  const [shipment, setShipment] = useStorage("farm_shipment",[]);
+  const [agrochem, setAgrochem] = useStorage("farm_agrochem",[]);
+  const [todos, setTodos] = useStorage("farm_todos",[]);
+  const pending = todos.filter(t=>!t.done).length;
+  const active = TC[tab];
+  return (
+    <div style={{maxWidth:480,margin:"0 auto",background:"#f4f6f4",minHeight:"100vh"}}>
+      <div style={{background:`linear-gradient(135deg,${active},${active}cc)`,padding:"14px 16px 12px",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.7)",letterSpacing:2,marginBottom:2}}>FARM MANAGER</div>
+            <div style={{fontSize:17,fontWeight:700,color:"#fff"}}>{TABS.find(t=>t.id===tab).icon} {TABS.find(t=>t.id===tab).label}</div>
+          </div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.8)"}}>{new Date().toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"})}</div>
+        </div>
+      </div>
+      <div style={{padding:"14px 12px 100px"}}>
+        {tab==="diary"&&<Diary records={diary} setRecords={setDiary}/>}
+        {tab==="calendar"&&<Calendar diary={diary} shipment={shipment}/>}
+        {tab==="shipment"&&<Shipment records={shipment} setRecords={setShipment}/>}
+        {tab==="agrochem"&&<Agrochem records={agrochem} setRecords={setAgrochem}/>}
+        {tab==="todo"&&<Todo todos={todos} setTodos={setTodos}/>}
+        {tab==="ai"&&<AiAdvisor/>}
+      </div>
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"#fff",borderTop:"1px solid #eee",display:"flex",boxShadow:"0 -2px 12px rgba(0,0,0,0.08)",zIndex:10}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"9px 2px 7px",border:"none",background:"none",cursor:"pointer",position:"relative",borderTop:tab===t.id?`3px solid ${TC[t.id]}`:"3px solid transparent"}}>
+            <div style={{fontSize:18}}>{t.icon}</div>
+            <div style={{fontSize:9,fontWeight:tab===t.id?700:400,color:tab===t.id?TC[t.id]:"#999",marginTop:1,lineHeight:1.2}}>{t.label}</div>
+            {t.id==="todo"&&pending>0&&<div style={{position:"absolute",top:5,right:"15%",background:"#E53935",color:"#fff",borderRadius:10,minWidth:15,height:15,fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px"}}>{pending}</div>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
