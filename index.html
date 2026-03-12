@@ -14,21 +14,18 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:#f0f4f0;font-family:'Hiragino Sans','Noto Sans JP',sans-serif;}
 input,select,textarea,button{font-family:inherit;}
-::-webkit-scrollbar{width:4px;}
-::-webkit-scrollbar-track{background:#f0f0f0;}
-::-webkit-scrollbar-thumb{background:#ccc;border-radius:2px;}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useRef} = React;
+const {useState,useEffect} = React;
 
-// ── APIキー設定 ──────────────────────────────────────
-const GEMINI_API_KEY ="AIzaSyC0YmAzkQTOEnHz1-V8no9BJ-oMvSll1Eo";
+const GEMINI_API_KEY = "AIzaSyC0YmAzkQTOEnHz1-V8no9BJ-oMvSll1Eo";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-// ── デフォルトデータ ─────────────────────────────────
 const DEFAULT_CROPS = ["いちご","トマト","きゅうり","ほうれん草","春菊","ケール","バジル","パセリ","コリアンダー","チャイブ","ディル","韓国唐辛子","タイ唐辛子","インド唐辛子","ハラペーニョ","その他"];
+const DEFAULT_LOCATIONS = ["ハウス1","ハウス2","露地A","露地B"];
 const WORK_TYPES = ["播種","育苗","定植前作業","定植","収穫","防除","施肥","灌水","整枝・誘引","草取り","土づくり","片付け作業","出荷準備","その他"];
 const CHANNELS = ["中央青果（市場）","たじまんま","直売","その他"];
 const TABS = [
@@ -52,14 +49,22 @@ function useStorage(key,init){
   return [val,setVal];
 }
 
-// ── スタイル定数 ─────────────────────────────────────
 const INP={width:"100%",padding:"10px 12px",borderRadius:10,border:"1.5px solid #e0e0e0",fontSize:14,boxSizing:"border-box",marginBottom:10,background:"#fafafa"};
 const chip=(active,color="#2E7D32")=>({display:"inline-block",padding:"5px 12px",borderRadius:20,margin:"3px",fontSize:12,fontWeight:600,cursor:"pointer",background:active?color:"#f0f0f0",color:active?"#fff":"#555",border:"none"});
 const PB=(color="#2E7D32")=>({width:"100%",padding:"12px",borderRadius:12,border:"none",background:color,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",marginTop:4});
 const card={background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"};
 const lbl={fontSize:12,color:"#555",display:"block",marginBottom:4};
 
-// ── Modal ────────────────────────────────────────────
+async function callGemini(prompt){
+  const res=await fetch(GEMINI_URL,{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
+  });
+  const data=await res.json();
+  if(!res.ok) throw new Error(data.error?.message||"API error");
+  return data.candidates[0].content.parts[0].text;
+}
+
 function Modal({title,onClose,children}){
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"flex-end"}}>
@@ -74,35 +79,19 @@ function Modal({title,onClose,children}){
   );
 }
 
-// ── Gemini AI呼び出し ────────────────────────────────
-async function callGemini(prompt){
-  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,{
-    method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
-  });
-  const data=await res.json();
-  return data.candidates[0].content.parts[0].text;
-}
-
-// ── 作業日誌 ─────────────────────────────────────────
-function Diary({records,setRecords,crops,pesticides,fertilizers}){
+function Diary({records,setRecords,crops,locations,pesticides,fertilizers}){
   const [open,setOpen]=useState(false);
   const [filter,setFilter]=useState("");
-  const initForm={date:today(),crop:"",workType:"",hours:"",memo:"",weather:"晴れ",
-    pesticide:"",pest:"",dilution:"",sprayAmount:"",
-    fertilizers:[],soilMemo:""};
+  const initForm={date:today(),crop:"",location:"",workType:"",hours:"",memo:"",weather:"晴れ",pesticide:"",pest:"",dilution:"",sprayAmount:"",fertilizers:[]};
   const [form,setForm]=useState(initForm);
 
-  const isPesticide = form.workType==="防除";
-  const isSoil = form.workType==="土づくり";
+  const isPesticide=form.workType==="防除";
+  const isSoil=form.workType==="土づくり";
 
   const addFertilizer=()=>setForm(f=>({...f,fertilizers:[...f.fertilizers,{id:"",bags:"",kg:""}]}));
-  const updateFertilizer=(i,field,val)=>setForm(f=>{
-    const arr=[...f.fertilizers];arr[i]={...arr[i],[field]:val};return {...f,fertilizers:arr};
-  });
+  const updateFertilizer=(i,field,val)=>setForm(f=>{const arr=[...f.fertilizers];arr[i]={...arr[i],[field]:val};return {...f,fertilizers:arr};});
   const removeFertilizer=i=>setForm(f=>({...f,fertilizers:f.fertilizers.filter((_,j)=>j!==i)}));
 
-  // 施肥成分計算
   const calcNPK=()=>{
     let N=0,P=0,K=0;
     form.fertilizers.forEach(item=>{
@@ -116,16 +105,14 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
     return {N:N.toFixed(2),P:P.toFixed(2),K:K.toFixed(2)};
   };
 
-  // 農薬適応チェック
-  const checkPesticideApplicability=()=>{
+  const checkApplicability=()=>{
     if(!form.pesticide||!form.crop) return null;
     const p=pesticides.find(p=>p.id===form.pesticide);
     if(!p||!p.applicableCrops) return null;
     return p.applicableCrops.includes(form.crop);
   };
 
-  // 使用回数チェック
-  const checkUsageCount=()=>{
+  const checkUsage=()=>{
     if(!form.pesticide) return null;
     const p=pesticides.find(p=>p.id===form.pesticide);
     if(!p||!p.maxUses) return null;
@@ -140,8 +127,8 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
   };
 
   const filtered=filter?records.filter(r=>r.crop===filter):records;
-  const applicable=checkPesticideApplicability();
-  const usage=checkUsageCount();
+  const applicable=checkApplicability();
+  const usage=checkUsage();
   const npk=isSoil&&form.fertilizers.length>0?calcNPK():null;
 
   return(
@@ -153,7 +140,6 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
         </select>
         <button onClick={()=>setOpen(true)} style={{background:TC.diary,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 記録</button>
       </div>
-
       {filtered.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>作業記録がありません</div>}
       {filtered.map(r=>{
         const p=r.pesticide?pesticides.find(p=>p.id===r.pesticide):null;
@@ -163,7 +149,10 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
               <div style={{flex:1}}>
                 <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}　{r.weather}</span>
                 <div style={{fontWeight:700,fontSize:15,marginTop:2}}>{r.crop}</div>
-                <div style={{fontSize:13,color:"#555",marginTop:1}}>{r.workType}{r.hours?`　${r.hours}時間`:""}</div>
+                <div style={{display:"flex",gap:6,marginTop:2,flexWrap:"wrap"}}>
+                  {r.location&&<span style={{background:"#E3F2FD",color:"#1565C0",borderRadius:8,padding:"2px 8px",fontSize:11}}>📍{r.location}</span>}
+                  <span style={{fontSize:13,color:"#555"}}>{r.workType}{r.hours?`　${r.hours}時間`:""}</span>
+                </div>
                 {p&&<div style={{fontSize:12,color:"#6A1B9A",marginTop:3}}>🧪 {p.name}{r.pest?`　対象：${r.pest}`:""}</div>}
                 {r.fertilizers&&r.fertilizers.length>0&&<div style={{fontSize:12,color:"#2E7D32",marginTop:3}}>🌱 施肥あり</div>}
                 {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4,lineHeight:1.5}}>{r.memo}</div>}
@@ -173,7 +162,6 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
           </div>
         );
       })}
-
       {open&&<Modal title="作業を記録" onClose={()=>{setOpen(false);setForm(initForm);}}>
         <label style={lbl}>日付</label>
         <input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
@@ -183,6 +171,11 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
         <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}>
           <option value="">選択してください</option>
           {crops.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <label style={lbl}>場所</label>
+        <select style={INP} value={form.location} onChange={e=>setForm({...form,location:e.target.value})}>
+          <option value="">選択してください</option>
+          {locations.map(l=><option key={l}>{l}</option>)}
         </select>
         <label style={lbl}>作業内容 *</label>
         <div style={{marginBottom:10}}>{WORK_TYPES.map(w=><button key={w} style={chip(form.workType===w)} onClick={()=>setForm({...form,workType:w})}>{w}</button>)}</div>
@@ -200,10 +193,10 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
             {applicable===true&&<div style={{background:"#E8F5E9",borderRadius:8,padding:"6px 10px",fontSize:12,color:"#2E7D32",marginBottom:8}}>✅ {form.crop}への適応あり</div>}
             {applicable===false&&<div style={{background:"#FFF3E0",borderRadius:8,padding:"6px 10px",fontSize:12,color:"#E65100",marginBottom:8}}>⚠️ {form.crop}への適応なし（登録外使用に注意）</div>}
             {usage&&<div style={{background:usage.remaining<=0?"#FFEBEE":usage.remaining<=1?"#FFF3E0":"#E8F5E9",borderRadius:8,padding:"6px 10px",fontSize:12,color:usage.remaining<=0?"#E53935":usage.remaining<=1?"#E65100":"#2E7D32",marginBottom:8}}>
-              {usage.remaining<=0?"🚫 年間使用回数上限に達しています":usage.remaining<=1?`⚠️ 残り使用回数：${usage.remaining}回`:`✅ 残り使用回数：${usage.remaining}回`}（{usage.used}/{usage.max}回使用済み）
+              {usage.remaining<=0?"🚫 年間使用回数上限に達しています":usage.remaining<=1?`⚠️ 残り${usage.remaining}回`:`✅ 残り${usage.remaining}回`}（{usage.used}/{usage.max}回使用済み）
             </div>}
             <label style={lbl}>対象病害虫</label>
-            <input style={INP} placeholder="例：アザミウマ、灰色かび病" value={form.pest} onChange={e=>setForm({...form,pest:e.target.value})}/>
+            <input style={INP} placeholder="例：アザミウマ" value={form.pest} onChange={e=>setForm({...form,pest:e.target.value})}/>
             <div style={{display:"flex",gap:8}}>
               <div style={{flex:1}}><label style={lbl}>希釈倍数</label><input type="number" style={INP} placeholder="例：1000" value={form.dilution} onChange={e=>setForm({...form,dilution:e.target.value})}/></div>
               <div style={{flex:1}}><label style={lbl}>散布量(L)</label><input type="number" style={INP} placeholder="例：100" value={form.sprayAmount} onChange={e=>setForm({...form,sprayAmount:e.target.value})}/></div>
@@ -236,7 +229,7 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
             })}
             <button onClick={addFertilizer} style={{background:"#2E7D32",color:"#fff",border:"none",borderRadius:10,padding:"8px 16px",fontSize:13,cursor:"pointer",width:"100%",marginBottom:8}}>＋ 肥料を追加</button>
             {npk&&(
-              <div style={{background:"#fff",borderRadius:8,padding:"10px",marginTop:4}}>
+              <div style={{background:"#fff",borderRadius:8,padding:"10px"}}>
                 <div style={{fontSize:12,fontWeight:700,color:"#2E7D32",marginBottom:6}}>施肥成分合計</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
                   {[["窒素(N)",npk.N],["リン酸(P)",npk.P],["カリ(K)",npk.K]].map(([k,v])=>(
@@ -259,7 +252,6 @@ function Diary({records,setRecords,crops,pesticides,fertilizers}){
   );
 }
 
-// ── カレンダー ───────────────────────────────────────
 function Calendar({diary,shipment}){
   const now=new Date();
   const [year,setYear]=useState(now.getFullYear());
@@ -303,8 +295,8 @@ function Calendar({diary,shipment}){
         {(evByDay[selected]||[]).map((e,i)=>(
           <div key={i} style={{background:"#f8f8f8",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
             {e.channel
-              ?<><div style={{fontWeight:700,color:"#1565C0",fontSize:13}}>📦 出荷記録</div><div style={{fontSize:13,marginTop:4}}>{e.crop}　{e.channel}　{e.amount}{e.unit}{e.price?`　¥${Number(e.price).toLocaleString()}`:""}</div></>
-              :<><div style={{fontWeight:700,color:"#2E7D32",fontSize:13}}>📝 {e.workType}</div><div style={{fontSize:13,marginTop:4}}>{e.crop}{e.hours?`　${e.hours}時間`:""}</div>{e.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{e.memo}</div>}</>
+              ?<><div style={{fontWeight:700,color:"#1565C0",fontSize:13}}>📦 出荷記録</div><div style={{fontSize:13,marginTop:4}}>{e.crop}{e.location?`　📍${e.location}`:""} {e.channel}　{e.amount}{e.unit}{e.price?`　¥${Number(e.price).toLocaleString()}`:""}</div></>
+              :<><div style={{fontWeight:700,color:"#2E7D32",fontSize:13}}>📝 {e.workType}</div><div style={{fontSize:13,marginTop:4}}>{e.crop}{e.location?`　📍${e.location}`:""}{e.hours?`　${e.hours}時間`:""}</div>{e.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{e.memo}</div>}</>
             }
           </div>
         ))}
@@ -313,14 +305,13 @@ function Calendar({diary,shipment}){
   );
 }
 
-// ── 出荷記録 ─────────────────────────────────────────
-function Shipment({records,setRecords,crops}){
+function Shipment({records,setRecords,crops,locations}){
   const [open,setOpen]=useState(false);
-  const [form,setForm]=useState({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
+  const [form,setForm]=useState({date:today(),crop:"",location:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
   const save=()=>{
     if(!form.crop||!form.channel||!form.amount) return;
     setRecords(r=>[{id:Date.now(),...form},...r]);
-    setOpen(false);setForm({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
+    setOpen(false);setForm({date:today(),crop:"",location:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
   };
   const totCh={};
   records.forEach(r=>{totCh[r.channel]=(totCh[r.channel]||0)+Number(r.price||0);});
@@ -342,7 +333,10 @@ function Shipment({records,setRecords,crops}){
             <div>
               <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}</span>
               <div style={{fontWeight:700,fontSize:15,marginTop:2}}>{r.crop}</div>
-              <div style={{fontSize:13,color:"#555"}}>{r.channel}　{r.amount}{r.unit}</div>
+              <div style={{display:"flex",gap:6,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
+                {r.location&&<span style={{background:"#E3F2FD",color:"#1565C0",borderRadius:8,padding:"2px 8px",fontSize:11}}>📍{r.location}</span>}
+                <span style={{fontSize:13,color:"#555"}}>{r.channel}　{r.amount}{r.unit}</span>
+              </div>
               {r.price&&<div style={{fontSize:14,fontWeight:700,color:"#1565C0",marginTop:2}}>¥{Number(r.price).toLocaleString()}</div>}
               {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{r.memo}</div>}
             </div>
@@ -354,6 +348,8 @@ function Shipment({records,setRecords,crops}){
         <label style={lbl}>日付</label><input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
         <label style={lbl}>作物 *</label>
         <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">選択してください</option>{crops.map(c=><option key={c}>{c}</option>)}</select>
+        <label style={lbl}>場所</label>
+        <select style={INP} value={form.location} onChange={e=>setForm({...form,location:e.target.value})}><option value="">選択してください</option>{locations.map(l=><option key={l}>{l}</option>)}</select>
         <label style={lbl}>出荷先 *</label>
         <div style={{marginBottom:10}}>{CHANNELS.map(ch=><button key={ch} style={chip(form.channel===ch,"#1565C0")} onClick={()=>setForm({...form,channel:ch})}>{ch}</button>)}</div>
         <div style={{display:"flex",gap:8}}>
@@ -368,79 +364,51 @@ function Shipment({records,setRecords,crops}){
   );
 }
 
-// ── 資材管理 ─────────────────────────────────────────
 function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setOthers,crops,diary}){
   const [subTab,setSubTab]=useState("pesticide");
   const [open,setOpen]=useState(false);
   const [aiLoading,setAiLoading]=useState(false);
-
-  // 農薬フォーム
   const initP={name:"",fracCode:"",iracCode:"",maxUses:"",preharvest:"",applicableCrops:[],pests:"",memo:""};
   const [pForm,setPForm]=useState(initP);
-
-  // 肥料フォーム
   const initF={name:"",type:"化成",bagWeight:"",n:"",p:"",k:"",mg:"",ca:"",price:"",memo:""};
   const [fForm,setFForm]=useState(initF);
-
-  // その他資材フォーム
   const initO={name:"",category:"",unit:"",stock:"",memo:""};
   const [oForm,setOForm]=useState(initO);
-
   const [editId,setEditId]=useState(null);
 
-  // AI農薬情報取得
   const fetchPesticideInfo=async()=>{
     if(!pForm.name.trim()||aiLoading) return;
     setAiLoading(true);
     try{
-      const prompt=`あなたは日本の農薬の専門家です。以下の農薬について情報をJSONのみで返してください（説明文・マークダウン不要）。
-農薬名：「${pForm.name}」
-{"fracCode":"FRACコード（殺菌剤の場合。不明なら空文字）","iracCode":"IRACコード（殺虫剤の場合。不明なら空文字）","maxUses":"年間使用回数の上限（数字のみ。不明なら空文字）","preharvest":"収穫前日数（数字のみ。不明なら空文字）","applicableCrops":["適用作物1","適用作物2"],"pests":"主な対象病害虫（カンマ区切り）","memo":"特記事項（希釈倍数の目安など50字以内）"}`;
+      const prompt=`あなたは日本の農薬の専門家です。以下の農薬について情報をJSONのみで返してください（説明文・マークダウン不要）。農薬名：「${pForm.name}」\n{"fracCode":"FRACコード（殺菌剤の場合。不明なら空文字）","iracCode":"IRACコード（殺虫剤の場合。不明なら空文字）","maxUses":"年間使用回数の上限（数字のみ。不明なら空文字）","preharvest":"収穫前日数（数字のみ。不明なら空文字）","applicableCrops":["適用作物1","適用作物2"],"pests":"主な対象病害虫（カンマ区切り）","memo":"特記事項50字以内"}`;
       const text=await callGemini(prompt);
       const parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
       setPForm(f=>({...f,...parsed}));
-    }catch(e){alert("AI取得に失敗しました。手動で入力してください。");}
+    }catch(e){alert("AI取得に失敗しました："+e.message);}
     setAiLoading(false);
   };
 
   const savePesticide=()=>{
     if(!pForm.name) return;
-    if(editId){
-      setPesticides(ps=>ps.map(p=>p.id===editId?{...p,...pForm}:p));
-      setEditId(null);
-    }else{
-      setPesticides(ps=>[...ps,{id:Date.now().toString(),...pForm}]);
-    }
+    if(editId){setPesticides(ps=>ps.map(p=>p.id===editId?{...p,...pForm}:p));setEditId(null);}
+    else{setPesticides(ps=>[...ps,{id:Date.now().toString(),...pForm}]);}
     setOpen(false);setPForm(initP);
   };
-
   const saveFertilizer=()=>{
     if(!fForm.name) return;
-    if(editId){
-      setFertilizers(fs=>fs.map(f=>f.id===editId?{...f,...fForm}:f));
-      setEditId(null);
-    }else{
-      setFertilizers(fs=>[...fs,{id:Date.now().toString(),...fForm}]);
-    }
+    if(editId){setFertilizers(fs=>fs.map(f=>f.id===editId?{...f,...fForm}:f));setEditId(null);}
+    else{setFertilizers(fs=>[...fs,{id:Date.now().toString(),...fForm}]);}
     setOpen(false);setFForm(initF);
   };
-
   const saveOther=()=>{
     if(!oForm.name) return;
-    if(editId){
-      setOthers(os=>os.map(o=>o.id===editId?{...o,...oForm}:o));
-      setEditId(null);
-    }else{
-      setOthers(os=>[...os,{id:Date.now().toString(),...oForm}]);
-    }
+    if(editId){setOthers(os=>os.map(o=>o.id===editId?{...o,...oForm}:o));setEditId(null);}
+    else{setOthers(os=>[...os,{id:Date.now().toString(),...oForm}]);}
     setOpen(false);setOForm(initO);
   };
 
-  // 農薬ごとの今年の使用回数
-  const usageCount=(pid)=>diary.filter(r=>r.pesticide===pid&&new Date(r.date).getFullYear()===thisYear()).length;
-
-  // ローテーションチェック（直前の使用記録と同FRACかチェック）
-  const rotationWarning=(pest)=>{
+  const usageCount=pid=>diary.filter(r=>r.pesticide===pid&&new Date(r.date).getFullYear()===thisYear()).length;
+  const rotationWarning=pest=>{
     if(!pest.fracCode&&!pest.iracCode) return false;
     const recent=diary.filter(r=>r.pesticide&&r.pesticide!==pest.id).sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
     if(!recent) return false;
@@ -449,14 +417,14 @@ function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setO
     return (pest.fracCode&&pest.fracCode===recentP.fracCode)||(pest.iracCode&&pest.iracCode===recentP.iracCode);
   };
 
-  const subBtnStyle=(id)=>({flex:1,padding:"8px 4px",border:"none",background:subTab===id?"#6A1B9A":"#f0f0f0",color:subTab===id?"#fff":"#555",fontWeight:700,fontSize:12,cursor:"pointer",borderRadius:0});
+  const subBtnStyle=id=>({flex:1,padding:"8px 4px",border:"none",background:subTab===id?"#6A1B9A":"#f0f0f0",color:subTab===id?"#fff":"#555",fontWeight:700,fontSize:12,cursor:"pointer",borderRadius:0});
 
   return(
     <div>
       <div style={{display:"flex",borderRadius:12,overflow:"hidden",marginBottom:14,border:"1.5px solid #e0e0e0"}}>
         <button style={subBtnStyle("pesticide")} onClick={()=>setSubTab("pesticide")}>🧪 農薬</button>
         <button style={subBtnStyle("fertilizer")} onClick={()=>setSubTab("fertilizer")}>🌱 肥料</button>
-        <button style={subBtnStyle("other")} onClick={()=>setSubTab("other")}>📦 その他資材</button>
+        <button style={subBtnStyle("other")} onClick={()=>setSubTab("other")}>📦 その他</button>
       </div>
 
       {subTab==="pesticide"&&(
@@ -480,10 +448,8 @@ function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setO
                       {p.preharvest&&<span style={{background:"#FFF8E1",color:"#E65100",borderRadius:8,padding:"2px 8px",fontSize:11}}>収穫前{p.preharvest}日</span>}
                     </div>
                     {p.pests&&<div style={{fontSize:12,color:"#555",marginTop:4}}>対象：{p.pests}</div>}
-                    {max>0&&<div style={{fontSize:12,marginTop:4,color:used>=max?"#E53935":used>=max-1?"#E65100":"#2E7D32"}}>
-                      今年の使用：{used}/{max}回 {used>=max?"🚫":used>=max-1?"⚠️":"✅"}
-                    </div>}
-                    {warn&&<div style={{fontSize:11,color:"#E65100",marginTop:2}}>⚠️ ローテーション注意：直前と同じ系統</div>}
+                    {max>0&&<div style={{fontSize:12,marginTop:4,color:used>=max?"#E53935":used>=max-1?"#E65100":"#2E7D32"}}>今年：{used}/{max}回 {used>=max?"🚫":used>=max-1?"⚠️":"✅"}</div>}
+                    {warn&&<div style={{fontSize:11,color:"#E65100",marginTop:2}}>⚠️ ローテーション注意</div>}
                   </div>
                   <div style={{display:"flex",gap:4}}>
                     <button onClick={()=>{setEditId(p.id);setPForm({...initP,...p});setOpen(true);}} style={{background:"none",border:"none",color:"#aaa",fontSize:16,cursor:"pointer"}}>✏️</button>
@@ -497,7 +463,7 @@ function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setO
             <label style={lbl}>農薬名 *</label>
             <div style={{display:"flex",gap:8,marginBottom:10}}>
               <input style={{...INP,marginBottom:0,flex:1}} placeholder="例：アファーム乳剤" value={pForm.name} onChange={e=>setPForm({...pForm,name:e.target.value})}/>
-              <button onClick={fetchPesticideInfo} disabled={aiLoading||!pForm.name.trim()} style={{background:aiLoading?"#aaa":"#00695C",color:"#fff",border:"none",borderRadius:10,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>{aiLoading?"取得中…":"AI自動入力"}</button>
+              <button onClick={fetchPesticideInfo} disabled={aiLoading||!pForm.name.trim()} style={{background:aiLoading?"#aaa":"#00695C",color:"#fff",border:"none",borderRadius:10,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>{aiLoading?"取得中…":"AI自動入力"}</button>
             </div>
             <div style={{display:"flex",gap:8}}>
               <div style={{flex:1}}><label style={lbl}>FRACコード</label><input style={INP} placeholder="例：M1" value={pForm.fracCode} onChange={e=>setPForm({...pForm,fracCode:e.target.value})}/></div>
@@ -510,7 +476,7 @@ function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setO
             <label style={lbl}>対象病害虫</label>
             <input style={INP} placeholder="例：アザミウマ、灰色かび病" value={pForm.pests} onChange={e=>setPForm({...pForm,pests:e.target.value})}/>
             <label style={lbl}>適用作物（カンマ区切り）</label>
-            <input style={INP} placeholder="例：トマト,きゅうり,いちご" value={Array.isArray(pForm.applicableCrops)?pForm.applicableCrops.join(","):pForm.applicableCrops} onChange={e=>setPForm({...pForm,applicableCrops:e.target.value.split(",")})}/>
+            <input style={INP} placeholder="例：トマト,きゅうり" value={Array.isArray(pForm.applicableCrops)?pForm.applicableCrops.join(","):pForm.applicableCrops} onChange={e=>setPForm({...pForm,applicableCrops:e.target.value.split(",")})}/>
             <label style={lbl}>メモ</label>
             <textarea style={{...INP,height:60,resize:"none"}} value={pForm.memo} onChange={e=>setPForm({...pForm,memo:e.target.value})}/>
             <button style={PB(TC.zairyo)} onClick={savePesticide}>登録する</button>
@@ -533,11 +499,7 @@ function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setO
                     <span style={{background:"#E8F5E9",color:"#2E7D32",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:700}}>{f.type}</span>
                     {f.bagWeight&&<span style={{background:"#F1F8E9",color:"#558B2F",borderRadius:8,padding:"2px 8px",fontSize:11}}>{f.bagWeight}kg/袋</span>}
                   </div>
-                  <div style={{fontSize:12,color:"#555",marginTop:4}}>
-                    N:{f.n||0}%　P:{f.p||0}%　K:{f.k||0}%
-                    {f.mg?`　苦土:${f.mg}%`:""}
-                    {f.ca?`　石灰:${f.ca}%`:""}
-                  </div>
+                  <div style={{fontSize:12,color:"#555",marginTop:4}}>N:{f.n||0}% P:{f.p||0}% K:{f.k||0}%{f.mg?` 苦土:${f.mg}%`:""}${f.ca?` 石灰:${f.ca}%`:""}</div>
                 </div>
                 <div style={{display:"flex",gap:4}}>
                   <button onClick={()=>{setEditId(f.id);setFForm({...initF,...f});setOpen(true);}} style={{background:"none",border:"none",color:"#aaa",fontSize:16,cursor:"pointer"}}>✏️</button>
@@ -557,10 +519,7 @@ function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setO
               <div style={{fontSize:12,fontWeight:700,color:"#2E7D32",marginBottom:8}}>成分比率（%）</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 {[["n","窒素(N)"],["p","リン酸(P)"],["k","カリ(K)"],["mg","苦土(Mg)"],["ca","石灰(Ca)"]].map(([key,label])=>(
-                  <div key={key}>
-                    <label style={lbl}>{label}</label>
-                    <input type="number" style={{...INP,marginBottom:0}} placeholder="0" value={fForm[key]} onChange={e=>setFForm({...fForm,[key]:e.target.value})}/>
-                  </div>
+                  <div key={key}><label style={lbl}>{label}</label><input type="number" style={{...INP,marginBottom:0}} placeholder="0" value={fForm[key]} onChange={e=>setFForm({...fForm,[key]:e.target.value})}/></div>
                 ))}
               </div>
             </div>
@@ -613,7 +572,6 @@ function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setO
   );
 }
 
-// ── ToDo ────────────────────────────────────────────
 function Todo({todos,setTodos,crops}){
   const [open,setOpen]=useState(false);
   const [form,setForm]=useState({title:"",crop:"",dueDate:"",priority:"中",memo:""});
@@ -671,7 +629,6 @@ function Todo({todos,setTodos,crops}){
   );
 }
 
-// ── AI作付け相談 ─────────────────────────────────────
 function AiAdvisor(){
   const [veggie,setVeggie]=useState("");
   const [loading,setLoading]=useState(false);
@@ -686,7 +643,7 @@ function AiAdvisor(){
       const parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
       setResult(parsed);
       setHistory(h=>[{veggie,result:parsed,id:Date.now()},...h.slice(0,9)]);
-    }catch{setResult({error:true});}
+    }catch(e){setResult({error:true,msg:e.message});}
     setLoading(false);setVeggie("");
   };
   const dC={"初級":"#43A047","中級":"#FB8C00","上級":"#E53935"};
@@ -741,10 +698,11 @@ function AiAdvisor(){
   );
 }
 
-// ── 設定 ────────────────────────────────────────────
-function Settings({crops,setCrops}){
+function Settings({crops,setCrops,locations,setLocations}){
   const [newCrop,setNewCrop]=useState("");
-  const add=()=>{
+  const [newLoc,setNewLoc]=useState("");
+
+  const addCrop=()=>{
     const v=newCrop.trim();
     if(!v||crops.includes(v)) return;
     const idx=crops.indexOf("その他");
@@ -752,36 +710,61 @@ function Settings({crops,setCrops}){
     if(idx>=0) next.splice(idx,0,v); else next.push(v);
     setCrops(next);setNewCrop("");
   };
-  const remove=c=>{if(c==="その他") return;setCrops(crops.filter(x=>x!==c));};
+  const removeCrop=c=>{if(c==="その他") return;setCrops(crops.filter(x=>x!==c));};
+
+  const addLoc=()=>{
+    const v=newLoc.trim();
+    if(!v||locations.includes(v)) return;
+    setLocations([...locations,v]);setNewLoc("");
+  };
+  const removeLoc=l=>setLocations(locations.filter(x=>x!==l));
+
   return(
     <div>
       <div style={{background:"linear-gradient(135deg,#546E7A,#607D8B)",borderRadius:16,padding:"16px",marginBottom:16,color:"#fff"}}>
-        <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>⚙️ 作物リストの管理</div>
-        <div style={{fontSize:12,opacity:0.8}}>作物の追加・削除ができます</div>
+        <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>⚙️ 設定</div>
+        <div style={{fontSize:12,opacity:0.8}}>作物・場所の追加・削除ができます</div>
       </div>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
-        <input style={{...INP,marginBottom:0,flex:1}} placeholder="例：ズッキーニ、しそ…" value={newCrop} onChange={e=>setNewCrop(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
-        <button onClick={add} disabled={!newCrop.trim()} style={{background:"#546E7A",color:"#fff",border:"none",borderRadius:12,padding:"0 16px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}>追加</button>
+
+      <div style={{fontWeight:700,fontSize:14,color:"#333",marginBottom:8}}>🌿 作物リスト</div>
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <input style={{...INP,marginBottom:0,flex:1}} placeholder="例：ズッキーニ、しそ…" value={newCrop} onChange={e=>setNewCrop(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCrop()}/>
+        <button onClick={addCrop} disabled={!newCrop.trim()} style={{background:"#546E7A",color:"#fff",border:"none",borderRadius:12,padding:"0 16px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}>追加</button>
       </div>
-      <div style={{background:"#fff",borderRadius:14,padding:"12px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+      <div style={{background:"#fff",borderRadius:14,padding:"12px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)",marginBottom:20}}>
         {crops.map(c=>(
           <div key={c} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 4px",borderBottom:"1px solid #f0f0f0"}}>
             <span style={{fontSize:14}}>{c}</span>
-            {c!=="その他"&&<button onClick={()=>remove(c)} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>}
+            {c!=="その他"&&<button onClick={()=>removeCrop(c)} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>}
           </div>
         ))}
+      </div>
+
+      <div style={{fontWeight:700,fontSize:14,color:"#333",marginBottom:8}}>📍 場所リスト</div>
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <input style={{...INP,marginBottom:0,flex:1}} placeholder="例：ハウス3、南の露地…" value={newLoc} onChange={e=>setNewLoc(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addLoc()}/>
+        <button onClick={addLoc} disabled={!newLoc.trim()} style={{background:"#1565C0",color:"#fff",border:"none",borderRadius:12,padding:"0 16px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}>追加</button>
+      </div>
+      <div style={{background:"#fff",borderRadius:14,padding:"12px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+        {locations.map(l=>(
+          <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 4px",borderBottom:"1px solid #f0f0f0"}}>
+            <span style={{fontSize:14}}>📍 {l}</span>
+            <button onClick={()=>removeLoc(l)} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+          </div>
+        ))}
+        {locations.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"20px 0",fontSize:14}}>場所が登録されていません</div>}
       </div>
     </div>
   );
 }
 
-// ── メインApp ────────────────────────────────────────
 function App(){
   const [tab,setTab]=useState("diary");
   const [diary,setDiary]=useStorage("farm_diary",[]);
   const [shipment,setShipment]=useStorage("farm_shipment",[]);
   const [todos,setTodos]=useStorage("farm_todos",[]);
   const [crops,setCrops]=useStorage("farm_crops",DEFAULT_CROPS);
+  const [locations,setLocations]=useStorage("farm_locations",DEFAULT_LOCATIONS);
   const [pesticides,setPesticides]=useStorage("farm_pesticides",[]);
   const [fertilizers,setFertilizers]=useStorage("farm_fertilizers",[]);
   const [others,setOthers]=useStorage("farm_others",[]);
@@ -801,13 +784,13 @@ function App(){
         </div>
       </div>
       <div style={{padding:"14px 12px 100px"}}>
-        {tab==="diary"&&<Diary records={diary} setRecords={setDiary} crops={crops} pesticides={pesticides} fertilizers={fertilizers}/>}
+        {tab==="diary"&&<Diary records={diary} setRecords={setDiary} crops={crops} locations={locations} pesticides={pesticides} fertilizers={fertilizers}/>}
         {tab==="calendar"&&<Calendar diary={diary} shipment={shipment}/>}
-        {tab==="shipment"&&<Shipment records={shipment} setRecords={setShipment} crops={crops}/>}
+        {tab==="shipment"&&<Shipment records={shipment} setRecords={setShipment} crops={crops} locations={locations}/>}
         {tab==="zairyo"&&<Zairyo pesticides={pesticides} setPesticides={setPesticides} fertilizers={fertilizers} setFertilizers={setFertilizers} others={others} setOthers={setOthers} crops={crops} diary={diary}/>}
         {tab==="todo"&&<Todo todos={todos} setTodos={setTodos} crops={crops}/>}
         {tab==="ai"&&<AiAdvisor/>}
-        {tab==="settings"&&<Settings crops={crops} setCrops={setCrops}/>}
+        {tab==="settings"&&<Settings crops={crops} setCrops={setCrops} locations={locations} setLocations={setLocations}/>}
       </div>
       <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"#fff",borderTop:"1px solid #eee",display:"flex",boxShadow:"0 -2px 12px rgba(0,0,0,0.08)",zIndex:10}}>
         {TABS.map(t=>(
