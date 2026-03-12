@@ -21,6 +21,8 @@ input, select, textarea, button { font-family: inherit; }
 <script type="text/babel">
 const { useState, useEffect } = React;
 
+const GEMINI_API_KEY = "AIzaSyC71By9e7B3X_xeGHiXfcq1PzZLg6qA-PQ";
+
 const CROPS = ["いちご","トマト","きゅうり","ほうれん草","春菊","ケール","バジル","パセリ","コリアンダー","チャイブ","ディル","韓国唐辛子","タイ唐辛子","インド唐辛子","ハラペーニョ","その他"];
 const WORK_TYPES = ["播種","定植","収穫","防除","施肥","灌水","整枝・誘引","草取り","土づくり","出荷準備","その他"];
 const CHANNELS = ["中央青果（市場）","たじまんま","直売","その他"];
@@ -348,20 +350,26 @@ function AiAdvisor() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
+
   const ask = async () => {
     if(!veggie.trim()||loading) return;
     setLoading(true); setResult(null);
-    const prompt = `あなたは日本の農業専門家です。兵庫県豊岡市（但馬地域）の農家からの質問に答えてください。\n野菜・ハーブ名：「${veggie}」\n以下の形式でJSONのみを返してください（前後に説明文やマークダウン記号は不要）：\n{"name":"作物名","house":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"ハウス栽培ポイント50字以内"},"field":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"露地栽培ポイント50字以内"},"tip":"但馬地域アドバイス80字以内","difficulty":"初級／中級／上級"}\n定植不要な作物はtransplantを「直播」としてください。`;
+    const prompt = `あなたは日本の農業専門家です。兵庫県豊岡市（但馬地域）の農家からの質問に答えてください。野菜・ハーブ名：「${veggie}」。以下の形式でJSONのみを返してください（前後に説明文やマークダウン記号は不要）：{"name":"作物名","house":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"ハウス栽培ポイント50字以内"},"field":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"露地栽培ポイント50字以内"},"tip":"但馬地域アドバイス80字以内","difficulty":"初級／中級／上級"}。定植不要な作物はtransplantを「直播」としてください。`;
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
+      });
       const data = await res.json();
-      const text = data.content.map(c=>c.text||"").join("");
+      const text = data.candidates[0].content.parts[0].text;
       const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
       setResult(parsed);
       setHistory(h=>[{veggie,result:parsed,id:Date.now()},...h.slice(0,9)]);
     } catch { setResult({error:true}); }
     setLoading(false); setVeggie("");
   };
+
   const dC={"初級":"#43A047","中級":"#FB8C00","上級":"#E53935"};
   return (
     <div>
@@ -458,3 +466,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
+```
+
+コードの3行目あたりにある
+```
+const GEMINI_API_KEY = "YOUR_API_KEY_HERE";
