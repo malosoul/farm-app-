@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="農場管理">
@@ -11,48 +11,59 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #f4f6f4; font-family: 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
-input, select, textarea, button { font-family: inherit; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#f0f4f0;font-family:'Hiragino Sans','Noto Sans JP',sans-serif;}
+input,select,textarea,button{font-family:inherit;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:#f0f0f0;}
+::-webkit-scrollbar-thumb{background:#ccc;border-radius:2px;}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect } = React;
+const {useState,useEffect,useRef} = React;
 
+// ── APIキー設定 ──────────────────────────────────────
 const GEMINI_API_KEY = "AIzaSyC71By9e7B3X_xeGHiXfcq1PzZLg6qA-PQ";
 
-const CROPS = ["いちご","トマト","きゅうり","ほうれん草","春菊","ケール","バジル","パセリ","コリアンダー","チャイブ","ディル","韓国唐辛子","タイ唐辛子","インド唐辛子","ハラペーニョ","その他"];
-const WORK_TYPES = ["播種","定植","収穫","防除","施肥","灌水","整枝・誘引","草取り","土づくり","出荷準備","その他"];
+// ── デフォルトデータ ─────────────────────────────────
+const DEFAULT_CROPS = ["いちご","トマト","きゅうり","ほうれん草","春菊","ケール","バジル","パセリ","コリアンダー","チャイブ","ディル","韓国唐辛子","タイ唐辛子","インド唐辛子","ハラペーニョ","その他"];
+const WORK_TYPES = ["播種","育苗","定植前作業","定植","収穫","防除","施肥","灌水","整枝・誘引","草取り","土づくり","片付け作業","出荷準備","その他"];
 const CHANNELS = ["中央青果（市場）","たじまんま","直売","その他"];
 const TABS = [
-  { id:"diary",   label:"作業日誌",  icon:"📝" },
-  { id:"calendar",label:"カレンダー",icon:"📅" },
-  { id:"shipment",label:"出荷記録",  icon:"📦" },
-  { id:"agrochem",label:"農薬・資材",icon:"🧪" },
-  { id:"todo",    label:"ToDo",     icon:"✅" },
-  { id:"ai",      label:"作付け相談",icon:"🌱" },
+  {id:"diary",   label:"作業日誌",  icon:"📝"},
+  {id:"calendar",label:"カレンダー",icon:"📅"},
+  {id:"shipment",label:"出荷記録",  icon:"📦"},
+  {id:"zairyo",  label:"資材",      icon:"🧪"},
+  {id:"todo",    label:"ToDo",      icon:"✅"},
+  {id:"ai",      label:"作付け相談",icon:"🌱"},
+  {id:"settings",label:"設定",      icon:"⚙️"},
 ];
-const TC = { diary:"#2E7D32",calendar:"#1565C0",shipment:"#0277BD",agrochem:"#6A1B9A",todo:"#E65100",ai:"#00695C" };
+const TC = {diary:"#2E7D32",calendar:"#1565C0",shipment:"#0277BD",zairyo:"#6A1B9A",todo:"#E65100",ai:"#00695C",settings:"#546E7A"};
 
 const today = () => new Date().toISOString().split("T")[0];
-const fmtDate = d => { const dt=new Date(d); return `${dt.getFullYear()}年${dt.getMonth()+1}月${dt.getDate()}日`; };
+const fmtDate = d => {const dt=new Date(d);return `${dt.getFullYear()}年${dt.getMonth()+1}月${dt.getDate()}日`;};
+const thisYear = () => new Date().getFullYear();
 
-function useStorage(key, init) {
-  const [val, setVal] = useState(() => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):init; } catch { return init; } });
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }, [key, val]);
-  return [val, setVal];
+function useStorage(key,init){
+  const [val,setVal]=useState(()=>{try{const s=localStorage.getItem(key);return s?JSON.parse(s):init;}catch{return init;}});
+  useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(val));}catch{}},[key,val]);
+  return [val,setVal];
 }
 
-const INP = {width:"100%",padding:"10px 12px",borderRadius:10,border:"1.5px solid #e0e0e0",fontSize:14,boxSizing:"border-box",marginBottom:10,background:"#fafafa"};
-const chip = (active, color="#2E7D32") => ({display:"inline-block",padding:"5px 12px",borderRadius:20,margin:"3px",fontSize:12,fontWeight:600,cursor:"pointer",background:active?color:"#f0f0f0",color:active?"#fff":"#555",border:"none"});
-const PB = (color="#2E7D32") => ({width:"100%",padding:"12px",borderRadius:12,border:"none",background:color,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",marginTop:4});
+// ── スタイル定数 ─────────────────────────────────────
+const INP={width:"100%",padding:"10px 12px",borderRadius:10,border:"1.5px solid #e0e0e0",fontSize:14,boxSizing:"border-box",marginBottom:10,background:"#fafafa"};
+const chip=(active,color="#2E7D32")=>({display:"inline-block",padding:"5px 12px",borderRadius:20,margin:"3px",fontSize:12,fontWeight:600,cursor:"pointer",background:active?color:"#f0f0f0",color:active?"#fff":"#555",border:"none"});
+const PB=(color="#2E7D32")=>({width:"100%",padding:"12px",borderRadius:12,border:"none",background:color,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",marginTop:4});
+const card={background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"};
+const lbl={fontSize:12,color:"#555",display:"block",marginBottom:4};
 
-function Modal({ title, onClose, children }) {
-  return (
+// ── Modal ────────────────────────────────────────────
+function Modal({title,onClose,children}){
+  return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"flex-end"}}>
-      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",width:"100%",maxHeight:"90vh",overflowY:"auto",padding:"20px 16px 32px"}}>
+      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",width:"100%",maxHeight:"92vh",overflowY:"auto",padding:"20px 16px 40px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <h2 style={{margin:0,fontSize:17,fontWeight:700}}>{title}</h2>
           <button onClick={onClose} style={{background:"#f0f0f0",border:"none",borderRadius:20,width:32,height:32,fontSize:18,cursor:"pointer"}}>×</button>
@@ -63,70 +74,200 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function Diary({ records, setRecords }) {
-  const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState("");
-  const [form, setForm] = useState({date:today(),crop:"",workType:"",hours:"",memo:"",weather:"晴れ"});
-  const save = () => {
+// ── Gemini AI呼び出し ────────────────────────────────
+async function callGemini(prompt){
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
+  });
+  const data=await res.json();
+  return data.candidates[0].content.parts[0].text;
+}
+
+// ── 作業日誌 ─────────────────────────────────────────
+function Diary({records,setRecords,crops,pesticides,fertilizers}){
+  const [open,setOpen]=useState(false);
+  const [filter,setFilter]=useState("");
+  const initForm={date:today(),crop:"",workType:"",hours:"",memo:"",weather:"晴れ",
+    pesticide:"",pest:"",dilution:"",sprayAmount:"",
+    fertilizers:[],soilMemo:""};
+  const [form,setForm]=useState(initForm);
+
+  const isPesticide = form.workType==="防除";
+  const isSoil = form.workType==="土づくり";
+
+  const addFertilizer=()=>setForm(f=>({...f,fertilizers:[...f.fertilizers,{id:"",bags:"",kg:""}]}));
+  const updateFertilizer=(i,field,val)=>setForm(f=>{
+    const arr=[...f.fertilizers];arr[i]={...arr[i],[field]:val};return {...f,fertilizers:arr};
+  });
+  const removeFertilizer=i=>setForm(f=>({...f,fertilizers:f.fertilizers.filter((_,j)=>j!==i)}));
+
+  // 施肥成分計算
+  const calcNPK=()=>{
+    let N=0,P=0,K=0;
+    form.fertilizers.forEach(item=>{
+      const fert=fertilizers.find(f=>f.id===item.id);
+      if(!fert) return;
+      const kg=parseFloat(item.kg)||((parseFloat(item.bags)||0)*(parseFloat(fert.bagWeight)||0));
+      N+=kg*(parseFloat(fert.n)||0)/100;
+      P+=kg*(parseFloat(fert.p)||0)/100;
+      K+=kg*(parseFloat(fert.k)||0)/100;
+    });
+    return {N:N.toFixed(2),P:P.toFixed(2),K:K.toFixed(2)};
+  };
+
+  // 農薬適応チェック
+  const checkPesticideApplicability=()=>{
+    if(!form.pesticide||!form.crop) return null;
+    const p=pesticides.find(p=>p.id===form.pesticide);
+    if(!p||!p.applicableCrops) return null;
+    return p.applicableCrops.includes(form.crop);
+  };
+
+  // 使用回数チェック
+  const checkUsageCount=()=>{
+    if(!form.pesticide) return null;
+    const p=pesticides.find(p=>p.id===form.pesticide);
+    if(!p||!p.maxUses) return null;
+    const used=records.filter(r=>r.pesticide===form.pesticide&&new Date(r.date).getFullYear()===thisYear()).length;
+    return {used,max:parseInt(p.maxUses),remaining:parseInt(p.maxUses)-used};
+  };
+
+  const save=()=>{
     if(!form.crop||!form.workType) return;
     setRecords(r=>[{id:Date.now(),...form},...r]);
-    setOpen(false);
-    setForm({date:today(),crop:"",workType:"",hours:"",memo:"",weather:"晴れ"});
+    setOpen(false);setForm(initForm);
   };
-  const filtered = filter ? records.filter(r=>r.crop===filter) : records;
-  return (
+
+  const filtered=filter?records.filter(r=>r.crop===filter):records;
+  const applicable=checkPesticideApplicability();
+  const usage=checkUsageCount();
+  const npk=isSoil&&form.fertilizers.length>0?calcNPK():null;
+
+  return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <select style={{...INP,width:"auto",marginBottom:0,fontSize:13}} value={filter} onChange={e=>setFilter(e.target.value)}>
           <option value="">すべての作物</option>
-          {CROPS.map(c=><option key={c}>{c}</option>)}
+          {crops.map(c=><option key={c}>{c}</option>)}
         </select>
         <button onClick={()=>setOpen(true)} style={{background:TC.diary,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 記録</button>
       </div>
+
       {filtered.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>作業記録がありません</div>}
-      {filtered.map(r=>(
-        <div key={r.id} style={{background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <div>
-              <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}　{r.weather}</span>
-              <div style={{fontWeight:700,fontSize:15,marginTop:2}}>{r.crop}</div>
-              <div style={{fontSize:13,color:"#555",marginTop:1}}>{r.workType}{r.hours?`　${r.hours}時間`:""}</div>
-              {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4,lineHeight:1.5}}>{r.memo}</div>}
+      {filtered.map(r=>{
+        const p=r.pesticide?pesticides.find(p=>p.id===r.pesticide):null;
+        return(
+          <div key={r.id} style={card}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <div style={{flex:1}}>
+                <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}　{r.weather}</span>
+                <div style={{fontWeight:700,fontSize:15,marginTop:2}}>{r.crop}</div>
+                <div style={{fontSize:13,color:"#555",marginTop:1}}>{r.workType}{r.hours?`　${r.hours}時間`:""}</div>
+                {p&&<div style={{fontSize:12,color:"#6A1B9A",marginTop:3}}>🧪 {p.name}{r.pest?`　対象：${r.pest}`:""}</div>}
+                {r.fertilizers&&r.fertilizers.length>0&&<div style={{fontSize:12,color:"#2E7D32",marginTop:3}}>🌱 施肥あり</div>}
+                {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4,lineHeight:1.5}}>{r.memo}</div>}
+              </div>
+              <button onClick={()=>setRecords(rs=>rs.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
             </div>
-            <button onClick={()=>setRecords(rs=>rs.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
           </div>
-        </div>
-      ))}
-      {open&&<Modal title="作業を記録" onClose={()=>setOpen(false)}>
-        <label style={{fontSize:12,color:"#555"}}>日付</label>
+        );
+      })}
+
+      {open&&<Modal title="作業を記録" onClose={()=>{setOpen(false);setForm(initForm);}}>
+        <label style={lbl}>日付</label>
         <input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>天気</label>
+        <label style={lbl}>天気</label>
         <div style={{marginBottom:10}}>{["晴れ","曇り","雨","雪"].map(w=><button key={w} style={chip(form.weather===w)} onClick={()=>setForm({...form,weather:w})}>{w}</button>)}</div>
-        <label style={{fontSize:12,color:"#555"}}>作物 *</label>
+        <label style={lbl}>作物 *</label>
         <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}>
           <option value="">選択してください</option>
-          {CROPS.map(c=><option key={c}>{c}</option>)}
+          {crops.map(c=><option key={c}>{c}</option>)}
         </select>
-        <label style={{fontSize:12,color:"#555"}}>作業内容 *</label>
+        <label style={lbl}>作業内容 *</label>
         <div style={{marginBottom:10}}>{WORK_TYPES.map(w=><button key={w} style={chip(form.workType===w)} onClick={()=>setForm({...form,workType:w})}>{w}</button>)}</div>
-        <label style={{fontSize:12,color:"#555"}}>作業時間（時間）</label>
+        <label style={lbl}>作業時間（時間）</label>
         <input type="number" style={INP} placeholder="例：2.5" value={form.hours} onChange={e=>setForm({...form,hours:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>メモ</label>
-        <textarea style={{...INP,height:80,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
+
+        {isPesticide&&(
+          <div style={{background:"#F3E5F5",borderRadius:12,padding:"12px",marginBottom:10}}>
+            <div style={{fontWeight:700,color:"#6A1B9A",fontSize:13,marginBottom:10}}>🧪 農薬記録</div>
+            <label style={lbl}>農薬を選択</label>
+            <select style={INP} value={form.pesticide} onChange={e=>setForm({...form,pesticide:e.target.value})}>
+              <option value="">選択してください</option>
+              {pesticides.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            {applicable===true&&<div style={{background:"#E8F5E9",borderRadius:8,padding:"6px 10px",fontSize:12,color:"#2E7D32",marginBottom:8}}>✅ {form.crop}への適応あり</div>}
+            {applicable===false&&<div style={{background:"#FFF3E0",borderRadius:8,padding:"6px 10px",fontSize:12,color:"#E65100",marginBottom:8}}>⚠️ {form.crop}への適応なし（登録外使用に注意）</div>}
+            {usage&&<div style={{background:usage.remaining<=0?"#FFEBEE":usage.remaining<=1?"#FFF3E0":"#E8F5E9",borderRadius:8,padding:"6px 10px",fontSize:12,color:usage.remaining<=0?"#E53935":usage.remaining<=1?"#E65100":"#2E7D32",marginBottom:8}}>
+              {usage.remaining<=0?"🚫 年間使用回数上限に達しています":usage.remaining<=1?`⚠️ 残り使用回数：${usage.remaining}回`:`✅ 残り使用回数：${usage.remaining}回`}（{usage.used}/{usage.max}回使用済み）
+            </div>}
+            <label style={lbl}>対象病害虫</label>
+            <input style={INP} placeholder="例：アザミウマ、灰色かび病" value={form.pest} onChange={e=>setForm({...form,pest:e.target.value})}/>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}><label style={lbl}>希釈倍数</label><input type="number" style={INP} placeholder="例：1000" value={form.dilution} onChange={e=>setForm({...form,dilution:e.target.value})}/></div>
+              <div style={{flex:1}}><label style={lbl}>散布量(L)</label><input type="number" style={INP} placeholder="例：100" value={form.sprayAmount} onChange={e=>setForm({...form,sprayAmount:e.target.value})}/></div>
+            </div>
+          </div>
+        )}
+
+        {isSoil&&(
+          <div style={{background:"#E8F5E9",borderRadius:12,padding:"12px",marginBottom:10}}>
+            <div style={{fontWeight:700,color:"#2E7D32",fontSize:13,marginBottom:10}}>🌱 施肥記録</div>
+            {form.fertilizers.map((item,i)=>{
+              const fert=fertilizers.find(f=>f.id===item.id);
+              return(
+                <div key={i} style={{background:"#fff",borderRadius:8,padding:"10px",marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <span style={{fontSize:12,fontWeight:700,color:"#555"}}>肥料 {i+1}</span>
+                    <button onClick={()=>removeFertilizer(i)} style={{background:"none",border:"none",color:"#ddd",cursor:"pointer"}}>🗑</button>
+                  </div>
+                  <select style={INP} value={item.id} onChange={e=>updateFertilizer(i,"id",e.target.value)}>
+                    <option value="">肥料を選択</option>
+                    {fertilizers.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                  <div style={{display:"flex",gap:8}}>
+                    <div style={{flex:1}}><label style={lbl}>袋数</label><input type="number" style={INP} placeholder="袋" value={item.bags} onChange={e=>updateFertilizer(i,"bags",e.target.value)}/></div>
+                    <div style={{flex:1}}><label style={lbl}>重量(kg)</label><input type="number" style={INP} placeholder={fert?`1袋=${fert.bagWeight}kg`:"kg"} value={item.kg} onChange={e=>updateFertilizer(i,"kg",e.target.value)}/></div>
+                  </div>
+                  {fert&&<div style={{fontSize:11,color:"#888"}}>N:{fert.n}% P:{fert.p}% K:{fert.k}%</div>}
+                </div>
+              );
+            })}
+            <button onClick={addFertilizer} style={{background:"#2E7D32",color:"#fff",border:"none",borderRadius:10,padding:"8px 16px",fontSize:13,cursor:"pointer",width:"100%",marginBottom:8}}>＋ 肥料を追加</button>
+            {npk&&(
+              <div style={{background:"#fff",borderRadius:8,padding:"10px",marginTop:4}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#2E7D32",marginBottom:6}}>施肥成分合計</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                  {[["窒素(N)",npk.N],["リン酸(P)",npk.P],["カリ(K)",npk.K]].map(([k,v])=>(
+                    <div key={k} style={{background:"#E8F5E9",borderRadius:6,padding:"6px",textAlign:"center"}}>
+                      <div style={{fontSize:10,color:"#888"}}>{k}</div>
+                      <div style={{fontSize:14,fontWeight:700,color:"#2E7D32"}}>{v}kg</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <label style={lbl}>メモ</label>
+        <textarea style={{...INP,height:70,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
         <button style={PB(TC.diary)} onClick={save}>保存する</button>
       </Modal>}
     </div>
   );
 }
 
-function Calendar({ diary, shipment }) {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
-  const [selected, setSelected] = useState(null);
-  const daysInMonth = new Date(year,month+1,0).getDate();
-  const firstDay = new Date(year,month,1).getDay();
-  const evByDay = {};
+// ── カレンダー ───────────────────────────────────────
+function Calendar({diary,shipment}){
+  const now=new Date();
+  const [year,setYear]=useState(now.getFullYear());
+  const [month,setMonth]=useState(now.getMonth());
+  const [selected,setSelected]=useState(null);
+  const days=new Date(year,month+1,0).getDate();
+  const first=new Date(year,month,1).getDay();
+  const evByDay={};
   [...diary,...shipment].forEach(r=>{
     const d=new Date(r.date);
     if(d.getFullYear()===year&&d.getMonth()===month){
@@ -135,7 +276,7 @@ function Calendar({ diary, shipment }) {
       evByDay[day].push(r);
     }
   });
-  return (
+  return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <button onClick={()=>{if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);}} style={{background:"#f0f0f0",border:"none",borderRadius:20,width:36,height:36,fontSize:18,cursor:"pointer"}}>‹</button>
@@ -146,11 +287,11 @@ function Calendar({ diary, shipment }) {
         {["日","月","火","水","木","金","土"].map((d,i)=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:i===0?"#e53935":i===6?"#1565C0":"#888",padding:"4px 0"}}>{d}</div>)}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
-        {Array.from({length:firstDay}).map((_,i)=><div key={"e"+i}/>)}
-        {Array.from({length:daysInMonth}).map((_,i)=>{
+        {Array.from({length:first}).map((_,i)=><div key={"e"+i}/>)}
+        {Array.from({length:days}).map((_,i)=>{
           const day=i+1,events=evByDay[day];
           const isToday=day===now.getDate()&&month===now.getMonth()&&year===now.getFullYear();
-          return (
+          return(
             <div key={day} onClick={()=>events&&setSelected(day)} style={{borderRadius:10,padding:"5px 2px",textAlign:"center",background:isToday?"#E8F5E9":events?"#F1F8E9":"#fafafa",border:isToday?"2px solid #2E7D32":"1.5px solid #eee",cursor:events?"pointer":"default",minHeight:42}}>
               <div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?"#2E7D32":"#333"}}>{day}</div>
               {events&&<div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:2,marginTop:2}}>{events.slice(0,3).map((e,j)=><div key={j} style={{width:5,height:5,borderRadius:3,background:e.channel?"#1565C0":"#2E7D32"}}/>)}</div>}
@@ -172,19 +313,19 @@ function Calendar({ diary, shipment }) {
   );
 }
 
-function Shipment({ records, setRecords }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
-  const save = () => {
+// ── 出荷記録 ─────────────────────────────────────────
+function Shipment({records,setRecords,crops}){
+  const [open,setOpen]=useState(false);
+  const [form,setForm]=useState({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
+  const save=()=>{
     if(!form.crop||!form.channel||!form.amount) return;
     setRecords(r=>[{id:Date.now(),...form},...r]);
-    setOpen(false);
-    setForm({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
+    setOpen(false);setForm({date:today(),crop:"",channel:"",amount:"",unit:"ケース",price:"",memo:""});
   };
   const totCh={};
-  records.forEach(r=>{ totCh[r.channel]=(totCh[r.channel]||0)+Number(r.price||0); });
+  records.forEach(r=>{totCh[r.channel]=(totCh[r.channel]||0)+Number(r.price||0);});
   const grand=Object.values(totCh).reduce((a,b)=>a+b,0);
-  return (
+  return(
     <div>
       {grand>0&&<div style={{background:"linear-gradient(135deg,#1565C0,#1976D2)",borderRadius:16,padding:"14px 16px",marginBottom:14,color:"#fff"}}>
         <div style={{fontSize:12,opacity:0.8}}>累計売上</div>
@@ -196,7 +337,7 @@ function Shipment({ records, setRecords }) {
       </div>
       {records.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>出荷記録がありません</div>}
       {records.map(r=>(
-        <div key={r.id} style={{background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+        <div key={r.id} style={card}>
           <div style={{display:"flex",justifyContent:"space-between"}}>
             <div>
               <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}</span>
@@ -210,101 +351,289 @@ function Shipment({ records, setRecords }) {
         </div>
       ))}
       {open&&<Modal title="出荷を記録" onClose={()=>setOpen(false)}>
-        <label style={{fontSize:12,color:"#555"}}>日付</label>
-        <input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>作物 *</label>
-        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">選択してください</option>{CROPS.map(c=><option key={c}>{c}</option>)}</select>
-        <label style={{fontSize:12,color:"#555"}}>出荷先 *</label>
+        <label style={lbl}>日付</label><input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+        <label style={lbl}>作物 *</label>
+        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">選択してください</option>{crops.map(c=><option key={c}>{c}</option>)}</select>
+        <label style={lbl}>出荷先 *</label>
         <div style={{marginBottom:10}}>{CHANNELS.map(ch=><button key={ch} style={chip(form.channel===ch,"#1565C0")} onClick={()=>setForm({...form,channel:ch})}>{ch}</button>)}</div>
         <div style={{display:"flex",gap:8}}>
-          <div style={{flex:2}}><label style={{fontSize:12,color:"#555"}}>数量 *</label><input type="number" style={INP} value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/></div>
-          <div style={{flex:1}}><label style={{fontSize:12,color:"#555"}}>単位</label><select style={INP} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>{["ケース","袋","kg","本","束","個"].map(u=><option key={u}>{u}</option>)}</select></div>
+          <div style={{flex:2}}><label style={lbl}>数量 *</label><input type="number" style={INP} value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/></div>
+          <div style={{flex:1}}><label style={lbl}>単位</label><select style={INP} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>{["ケース","袋","kg","本","束","個"].map(u=><option key={u}>{u}</option>)}</select></div>
         </div>
-        <label style={{fontSize:12,color:"#555"}}>金額（円）</label>
-        <input type="number" style={INP} placeholder="例：15000" value={form.price} onChange={e=>setForm({...form,price:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>メモ</label>
-        <input style={INP} placeholder="規格・等級など" value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
+        <label style={lbl}>金額（円）</label><input type="number" style={INP} placeholder="例：15000" value={form.price} onChange={e=>setForm({...form,price:e.target.value})}/>
+        <label style={lbl}>メモ</label><input style={INP} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
         <button style={PB("#1565C0")} onClick={save}>保存する</button>
       </Modal>}
     </div>
   );
 }
 
-function Agrochem({ records, setRecords }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({date:today(),type:"農薬",name:"",crop:"",amount:"",unit:"ml",dilution:"",memo:""});
-  const save = () => {
-    if(!form.name||!form.crop) return;
-    setRecords(r=>[{id:Date.now(),...form},...r]);
-    setOpen(false);
-    setForm({date:today(),type:"農薬",name:"",crop:"",amount:"",unit:"ml",dilution:"",memo:""});
+// ── 資材管理 ─────────────────────────────────────────
+function Zairyo({pesticides,setPesticides,fertilizers,setFertilizers,others,setOthers,crops,diary}){
+  const [subTab,setSubTab]=useState("pesticide");
+  const [open,setOpen]=useState(false);
+  const [aiLoading,setAiLoading]=useState(false);
+
+  // 農薬フォーム
+  const initP={name:"",fracCode:"",iracCode:"",maxUses:"",preharvest:"",applicableCrops:[],pests:"",memo:""};
+  const [pForm,setPForm]=useState(initP);
+
+  // 肥料フォーム
+  const initF={name:"",type:"化成",bagWeight:"",n:"",p:"",k:"",mg:"",ca:"",price:"",memo:""};
+  const [fForm,setFForm]=useState(initF);
+
+  // その他資材フォーム
+  const initO={name:"",category:"",unit:"",stock:"",memo:""};
+  const [oForm,setOForm]=useState(initO);
+
+  const [editId,setEditId]=useState(null);
+
+  // AI農薬情報取得
+  const fetchPesticideInfo=async()=>{
+    if(!pForm.name.trim()||aiLoading) return;
+    setAiLoading(true);
+    try{
+      const prompt=`あなたは日本の農薬の専門家です。以下の農薬について情報をJSONのみで返してください（説明文・マークダウン不要）。
+農薬名：「${pForm.name}」
+{"fracCode":"FRACコード（殺菌剤の場合。不明なら空文字）","iracCode":"IRACコード（殺虫剤の場合。不明なら空文字）","maxUses":"年間使用回数の上限（数字のみ。不明なら空文字）","preharvest":"収穫前日数（数字のみ。不明なら空文字）","applicableCrops":["適用作物1","適用作物2"],"pests":"主な対象病害虫（カンマ区切り）","memo":"特記事項（希釈倍数の目安など50字以内）"}`;
+      const text=await callGemini(prompt);
+      const parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
+      setPForm(f=>({...f,...parsed}));
+    }catch(e){alert("AI取得に失敗しました。手動で入力してください。");}
+    setAiLoading(false);
   };
-  return (
+
+  const savePesticide=()=>{
+    if(!pForm.name) return;
+    if(editId){
+      setPesticides(ps=>ps.map(p=>p.id===editId?{...p,...pForm}:p));
+      setEditId(null);
+    }else{
+      setPesticides(ps=>[...ps,{id:Date.now().toString(),...pForm}]);
+    }
+    setOpen(false);setPForm(initP);
+  };
+
+  const saveFertilizer=()=>{
+    if(!fForm.name) return;
+    if(editId){
+      setFertilizers(fs=>fs.map(f=>f.id===editId?{...f,...fForm}:f));
+      setEditId(null);
+    }else{
+      setFertilizers(fs=>[...fs,{id:Date.now().toString(),...fForm}]);
+    }
+    setOpen(false);setFForm(initF);
+  };
+
+  const saveOther=()=>{
+    if(!oForm.name) return;
+    if(editId){
+      setOthers(os=>os.map(o=>o.id===editId?{...o,...oForm}:o));
+      setEditId(null);
+    }else{
+      setOthers(os=>[...os,{id:Date.now().toString(),...oForm}]);
+    }
+    setOpen(false);setOForm(initO);
+  };
+
+  // 農薬ごとの今年の使用回数
+  const usageCount=(pid)=>diary.filter(r=>r.pesticide===pid&&new Date(r.date).getFullYear()===thisYear()).length;
+
+  // ローテーションチェック（直前の使用記録と同FRACかチェック）
+  const rotationWarning=(pest)=>{
+    if(!pest.fracCode&&!pest.iracCode) return false;
+    const recent=diary.filter(r=>r.pesticide&&r.pesticide!==pest.id).sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+    if(!recent) return false;
+    const recentP=pesticides.find(p=>p.id===recent.pesticide);
+    if(!recentP) return false;
+    return (pest.fracCode&&pest.fracCode===recentP.fracCode)||(pest.iracCode&&pest.iracCode===recentP.iracCode);
+  };
+
+  const subBtnStyle=(id)=>({flex:1,padding:"8px 4px",border:"none",background:subTab===id?"#6A1B9A":"#f0f0f0",color:subTab===id?"#fff":"#555",fontWeight:700,fontSize:12,cursor:"pointer",borderRadius:0});
+
+  return(
     <div>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
-        <button onClick={()=>setOpen(true)} style={{background:TC.agrochem,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 使用記録</button>
+      <div style={{display:"flex",borderRadius:12,overflow:"hidden",marginBottom:14,border:"1.5px solid #e0e0e0"}}>
+        <button style={subBtnStyle("pesticide")} onClick={()=>setSubTab("pesticide")}>🧪 農薬</button>
+        <button style={subBtnStyle("fertilizer")} onClick={()=>setSubTab("fertilizer")}>🌱 肥料</button>
+        <button style={subBtnStyle("other")} onClick={()=>setSubTab("other")}>📦 その他資材</button>
       </div>
-      {records.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>使用記録がありません</div>}
-      {records.map(r=>(
-        <div key={r.id} style={{background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <div>
-              <span style={{fontSize:12,color:"#888"}}>{fmtDate(r.date)}</span>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
-                <span style={{background:r.type==="農薬"?"#EDE7F6":"#E8F5E9",color:r.type==="農薬"?"#6A1B9A":"#2E7D32",borderRadius:10,padding:"2px 8px",fontSize:11,fontWeight:700}}>{r.type}</span>
-                <span style={{fontWeight:700,fontSize:15}}>{r.name}</span>
-              </div>
-              <div style={{fontSize:13,color:"#555",marginTop:2}}>{r.crop}　{r.amount}{r.unit}{r.dilution?`　希釈：${r.dilution}倍`:""}</div>
-              {r.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{r.memo}</div>}
-            </div>
-            <button onClick={()=>setRecords(rs=>rs.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+
+      {subTab==="pesticide"&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+            <button onClick={()=>{setEditId(null);setPForm(initP);setOpen(true);}} style={{background:TC.zairyo,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 農薬登録</button>
           </div>
+          {pesticides.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:40,fontSize:14}}>農薬が登録されていません</div>}
+          {pesticides.map(p=>{
+            const used=usageCount(p.id);
+            const max=parseInt(p.maxUses)||0;
+            const warn=rotationWarning(p);
+            return(
+              <div key={p.id} style={{...card,borderLeft:`4px solid ${used>=max&&max>0?"#E53935":"#6A1B9A"}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+                      {p.fracCode&&<span style={{background:"#EDE7F6",color:"#6A1B9A",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:700}}>FRAC:{p.fracCode}</span>}
+                      {p.iracCode&&<span style={{background:"#E3F2FD",color:"#1565C0",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:700}}>IRAC:{p.iracCode}</span>}
+                      {p.preharvest&&<span style={{background:"#FFF8E1",color:"#E65100",borderRadius:8,padding:"2px 8px",fontSize:11}}>収穫前{p.preharvest}日</span>}
+                    </div>
+                    {p.pests&&<div style={{fontSize:12,color:"#555",marginTop:4}}>対象：{p.pests}</div>}
+                    {max>0&&<div style={{fontSize:12,marginTop:4,color:used>=max?"#E53935":used>=max-1?"#E65100":"#2E7D32"}}>
+                      今年の使用：{used}/{max}回 {used>=max?"🚫":used>=max-1?"⚠️":"✅"}
+                    </div>}
+                    {warn&&<div style={{fontSize:11,color:"#E65100",marginTop:2}}>⚠️ ローテーション注意：直前と同じ系統</div>}
+                  </div>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>{setEditId(p.id);setPForm({...initP,...p});setOpen(true);}} style={{background:"none",border:"none",color:"#aaa",fontSize:16,cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>setPesticides(ps=>ps.filter(x=>x.id!==p.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {open&&subTab==="pesticide"&&<Modal title={editId?"農薬を編集":"農薬を登録"} onClose={()=>{setOpen(false);setPForm(initP);setEditId(null);}}>
+            <label style={lbl}>農薬名 *</label>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <input style={{...INP,marginBottom:0,flex:1}} placeholder="例：アファーム乳剤" value={pForm.name} onChange={e=>setPForm({...pForm,name:e.target.value})}/>
+              <button onClick={fetchPesticideInfo} disabled={aiLoading||!pForm.name.trim()} style={{background:aiLoading?"#aaa":"#00695C",color:"#fff",border:"none",borderRadius:10,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>{aiLoading?"取得中…":"AI自動入力"}</button>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}><label style={lbl}>FRACコード</label><input style={INP} placeholder="例：M1" value={pForm.fracCode} onChange={e=>setPForm({...pForm,fracCode:e.target.value})}/></div>
+              <div style={{flex:1}}><label style={lbl}>IRACコード</label><input style={INP} placeholder="例：5" value={pForm.iracCode} onChange={e=>setPForm({...pForm,iracCode:e.target.value})}/></div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}><label style={lbl}>年間使用上限（回）</label><input type="number" style={INP} value={pForm.maxUses} onChange={e=>setPForm({...pForm,maxUses:e.target.value})}/></div>
+              <div style={{flex:1}}><label style={lbl}>収穫前日数</label><input type="number" style={INP} value={pForm.preharvest} onChange={e=>setPForm({...pForm,preharvest:e.target.value})}/></div>
+            </div>
+            <label style={lbl}>対象病害虫</label>
+            <input style={INP} placeholder="例：アザミウマ、灰色かび病" value={pForm.pests} onChange={e=>setPForm({...pForm,pests:e.target.value})}/>
+            <label style={lbl}>適用作物（カンマ区切り）</label>
+            <input style={INP} placeholder="例：トマト,きゅうり,いちご" value={Array.isArray(pForm.applicableCrops)?pForm.applicableCrops.join(","):pForm.applicableCrops} onChange={e=>setPForm({...pForm,applicableCrops:e.target.value.split(",")})}/>
+            <label style={lbl}>メモ</label>
+            <textarea style={{...INP,height:60,resize:"none"}} value={pForm.memo} onChange={e=>setPForm({...pForm,memo:e.target.value})}/>
+            <button style={PB(TC.zairyo)} onClick={savePesticide}>登録する</button>
+          </Modal>}
         </div>
-      ))}
-      {open&&<Modal title="農薬・資材を記録" onClose={()=>setOpen(false)}>
-        <label style={{fontSize:12,color:"#555"}}>日付</label>
-        <input type="date" style={INP} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>種別</label>
-        <div style={{marginBottom:10}}>{["農薬","肥料","資材","その他"].map(t=><button key={t} style={chip(form.type===t,"#6A1B9A")} onClick={()=>setForm({...form,type:t})}>{t}</button>)}</div>
-        <label style={{fontSize:12,color:"#555"}}>品名 *</label>
-        <input style={INP} placeholder="例：ベストガード水溶剤" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>対象作物 *</label>
-        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">選択してください</option>{CROPS.map(c=><option key={c}>{c}</option>)}</select>
-        <div style={{display:"flex",gap:8}}>
-          <div style={{flex:2}}><label style={{fontSize:12,color:"#555"}}>使用量</label><input type="number" style={INP} value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/></div>
-          <div style={{flex:1}}><label style={{fontSize:12,color:"#555"}}>単位</label><select style={INP} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>{["ml","L","g","kg","袋"].map(u=><option key={u}>{u}</option>)}</select></div>
+      )}
+
+      {subTab==="fertilizer"&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+            <button onClick={()=>{setEditId(null);setFForm(initF);setOpen(true);}} style={{background:"#2E7D32",color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 肥料登録</button>
+          </div>
+          {fertilizers.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:40,fontSize:14}}>肥料が登録されていません</div>}
+          {fertilizers.map(f=>(
+            <div key={f.id} style={{...card,borderLeft:"4px solid #2E7D32"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:15}}>{f.name}</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+                    <span style={{background:"#E8F5E9",color:"#2E7D32",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:700}}>{f.type}</span>
+                    {f.bagWeight&&<span style={{background:"#F1F8E9",color:"#558B2F",borderRadius:8,padding:"2px 8px",fontSize:11}}>{f.bagWeight}kg/袋</span>}
+                  </div>
+                  <div style={{fontSize:12,color:"#555",marginTop:4}}>
+                    N:{f.n||0}%　P:{f.p||0}%　K:{f.k||0}%
+                    {f.mg?`　苦土:${f.mg}%`:""}
+                    {f.ca?`　石灰:${f.ca}%`:""}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:4}}>
+                  <button onClick={()=>{setEditId(f.id);setFForm({...initF,...f});setOpen(true);}} style={{background:"none",border:"none",color:"#aaa",fontSize:16,cursor:"pointer"}}>✏️</button>
+                  <button onClick={()=>setFertilizers(fs=>fs.filter(x=>x.id!==f.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {open&&subTab==="fertilizer"&&<Modal title={editId?"肥料を編集":"肥料を登録"} onClose={()=>{setOpen(false);setFForm(initF);setEditId(null);}}>
+            <label style={lbl}>肥料名 *</label>
+            <input style={INP} placeholder="例：苦土石灰、CDU複合肥料" value={fForm.name} onChange={e=>setFForm({...fForm,name:e.target.value})}/>
+            <label style={lbl}>種別</label>
+            <div style={{marginBottom:10}}>{["化成","有機","単肥","石灰系","その他"].map(t=><button key={t} style={chip(fForm.type===t,"#2E7D32")} onClick={()=>setFForm({...fForm,type:t})}>{t}</button>)}</div>
+            <label style={lbl}>1袋の重量（kg）</label>
+            <input type="number" style={INP} placeholder="例：20" value={fForm.bagWeight} onChange={e=>setFForm({...fForm,bagWeight:e.target.value})}/>
+            <div style={{background:"#E8F5E9",borderRadius:10,padding:"12px",marginBottom:10}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#2E7D32",marginBottom:8}}>成分比率（%）</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {[["n","窒素(N)"],["p","リン酸(P)"],["k","カリ(K)"],["mg","苦土(Mg)"],["ca","石灰(Ca)"]].map(([key,label])=>(
+                  <div key={key}>
+                    <label style={lbl}>{label}</label>
+                    <input type="number" style={{...INP,marginBottom:0}} placeholder="0" value={fForm[key]} onChange={e=>setFForm({...fForm,[key]:e.target.value})}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <label style={lbl}>価格（円/袋）</label>
+            <input type="number" style={INP} placeholder="例：1200" value={fForm.price} onChange={e=>setFForm({...fForm,price:e.target.value})}/>
+            <label style={lbl}>メモ</label>
+            <textarea style={{...INP,height:60,resize:"none"}} value={fForm.memo} onChange={e=>setFForm({...fForm,memo:e.target.value})}/>
+            <button style={PB("#2E7D32")} onClick={saveFertilizer}>登録する</button>
+          </Modal>}
         </div>
-        <label style={{fontSize:12,color:"#555"}}>希釈倍数</label>
-        <input type="number" style={INP} placeholder="例：1000" value={form.dilution} onChange={e=>setForm({...form,dilution:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>メモ</label>
-        <textarea style={{...INP,height:70,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
-        <button style={PB(TC.agrochem)} onClick={save}>保存する</button>
-      </Modal>}
+      )}
+
+      {subTab==="other"&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+            <button onClick={()=>{setEditId(null);setOForm(initO);setOpen(true);}} style={{background:"#0277BD",color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ 資材登録</button>
+          </div>
+          {others.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:40,fontSize:14}}>資材が登録されていません</div>}
+          {others.map(o=>(
+            <div key={o.id} style={{...card,borderLeft:"4px solid #0277BD"}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:15}}>{o.name}</div>
+                  <div style={{fontSize:12,color:"#555",marginTop:2}}>{o.category}{o.stock?`　在庫：${o.stock}${o.unit}`:""}</div>
+                  {o.memo&&<div style={{fontSize:12,color:"#777",marginTop:4}}>{o.memo}</div>}
+                </div>
+                <div style={{display:"flex",gap:4}}>
+                  <button onClick={()=>{setEditId(o.id);setOForm({...initO,...o});setOpen(true);}} style={{background:"none",border:"none",color:"#aaa",fontSize:16,cursor:"pointer"}}>✏️</button>
+                  <button onClick={()=>setOthers(os=>os.filter(x=>x.id!==o.id))} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {open&&subTab==="other"&&<Modal title={editId?"資材を編集":"資材を登録"} onClose={()=>{setOpen(false);setOForm(initO);setEditId(null);}}>
+            <label style={lbl}>資材名 *</label>
+            <input style={INP} placeholder="例：防虫ネット、マルチ" value={oForm.name} onChange={e=>setOForm({...oForm,name:e.target.value})}/>
+            <label style={lbl}>カテゴリ</label>
+            <input style={INP} placeholder="例：被覆資材、支柱" value={oForm.category} onChange={e=>setOForm({...oForm,category:e.target.value})}/>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}><label style={lbl}>在庫数</label><input type="number" style={INP} value={oForm.stock} onChange={e=>setOForm({...oForm,stock:e.target.value})}/></div>
+              <div style={{flex:1}}><label style={lbl}>単位</label><input style={INP} placeholder="例：枚、m" value={oForm.unit} onChange={e=>setOForm({...oForm,unit:e.target.value})}/></div>
+            </div>
+            <label style={lbl}>メモ</label>
+            <textarea style={{...INP,height:60,resize:"none"}} value={oForm.memo} onChange={e=>setOForm({...oForm,memo:e.target.value})}/>
+            <button style={PB("#0277BD")} onClick={saveOther}>登録する</button>
+          </Modal>}
+        </div>
+      )}
     </div>
   );
 }
 
-function Todo({ todos, setTodos }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({title:"",crop:"",dueDate:"",priority:"中",memo:""});
-  const pC = {"高":"#E53935","中":"#FB8C00","低":"#43A047"};
-  const save = () => {
+// ── ToDo ────────────────────────────────────────────
+function Todo({todos,setTodos,crops}){
+  const [open,setOpen]=useState(false);
+  const [form,setForm]=useState({title:"",crop:"",dueDate:"",priority:"中",memo:""});
+  const pC={"高":"#E53935","中":"#FB8C00","低":"#43A047"};
+  const save=()=>{
     if(!form.title) return;
     setTodos(t=>[{id:Date.now(),done:false,...form},...t]);
-    setOpen(false);
-    setForm({title:"",crop:"",dueDate:"",priority:"中",memo:""});
+    setOpen(false);setForm({title:"",crop:"",dueDate:"",priority:"中",memo:""});
   };
-  const toggle = id => setTodos(ts=>ts.map(t=>t.id===id?{...t,done:!t.done}:t));
-  const active=todos.filter(t=>!t.done), done=todos.filter(t=>t.done);
-  const overdue = t => t.dueDate&&new Date(t.dueDate)<new Date()&&!t.done;
-  return (
+  const toggle=id=>setTodos(ts=>ts.map(t=>t.id===id?{...t,done:!t.done}:t));
+  const active=todos.filter(t=>!t.done),done=todos.filter(t=>t.done);
+  const overdue=t=>t.dueDate&&new Date(t.dueDate)<new Date()&&!t.done;
+  return(
     <div>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
         <button onClick={()=>setOpen(true)} style={{background:TC.todo,color:"#fff",border:"none",borderRadius:24,padding:"8px 18px",fontWeight:700,fontSize:14,cursor:"pointer"}}>＋ タスク追加</button>
       </div>
       {active.length===0&&done.length===0&&<div style={{textAlign:"center",color:"#aaa",marginTop:60,fontSize:14}}>タスクがありません</div>}
       {active.map(t=>(
-        <div key={t.id} style={{background:overdue(t)?"#FFF3E0":"#fff",borderRadius:14,padding:"12px 14px",marginBottom:8,boxShadow:"0 1px 6px rgba(0,0,0,0.07)",borderLeft:`4px solid ${pC[t.priority]}`}}>
+        <div key={t.id} style={{...card,background:overdue(t)?"#FFF3E0":"#fff",borderLeft:`4px solid ${pC[t.priority]}`}}>
           <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
             <button onClick={()=>toggle(t.id)} style={{marginTop:2,width:22,height:22,borderRadius:11,border:`2px solid ${pC[t.priority]}`,background:"#fff",cursor:"pointer",flexShrink:0}}/>
             <div style={{flex:1}}>
@@ -329,49 +658,39 @@ function Todo({ todos, setTodos }) {
         ))}
       </>}
       {open&&<Modal title="タスクを追加" onClose={()=>setOpen(false)}>
-        <label style={{fontSize:12,color:"#555"}}>タスク名 *</label>
-        <input style={INP} placeholder="例：トマト苗の発注" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>関連作物</label>
-        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">（任意）</option>{CROPS.map(c=><option key={c}>{c}</option>)}</select>
-        <label style={{fontSize:12,color:"#555"}}>優先度</label>
+        <label style={lbl}>タスク名 *</label><input style={INP} placeholder="例：トマト苗の発注" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+        <label style={lbl}>関連作物</label>
+        <select style={INP} value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}><option value="">（任意）</option>{crops.map(c=><option key={c}>{c}</option>)}</select>
+        <label style={lbl}>優先度</label>
         <div style={{marginBottom:10}}>{["高","中","低"].map(p=><button key={p} style={chip(form.priority===p,pC[p])} onClick={()=>setForm({...form,priority:p})}>{p}</button>)}</div>
-        <label style={{fontSize:12,color:"#555"}}>期限</label>
-        <input type="date" style={INP} value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/>
-        <label style={{fontSize:12,color:"#555"}}>メモ</label>
-        <textarea style={{...INP,height:70,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
+        <label style={lbl}>期限</label><input type="date" style={INP} value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/>
+        <label style={lbl}>メモ</label><textarea style={{...INP,height:70,resize:"none"}} value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})}/>
         <button style={PB(TC.todo)} onClick={save}>追加する</button>
       </Modal>}
     </div>
   );
 }
 
-function AiAdvisor() {
-  const [veggie, setVeggie] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [history, setHistory] = useState([]);
-
-  const ask = async () => {
+// ── AI作付け相談 ─────────────────────────────────────
+function AiAdvisor(){
+  const [veggie,setVeggie]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+  const [history,setHistory]=useState([]);
+  const ask=async()=>{
     if(!veggie.trim()||loading) return;
-    setLoading(true); setResult(null);
-    const prompt = `あなたは日本の農業専門家です。兵庫県豊岡市（但馬地域）の農家からの質問に答えてください。野菜・ハーブ名：「${veggie}」。以下の形式でJSONのみを返してください（前後に説明文やマークダウン記号は不要）：{"name":"作物名","house":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"ハウス栽培ポイント50字以内"},"field":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"露地栽培ポイント50字以内"},"tip":"但馬地域アドバイス80字以内","difficulty":"初級／中級／上級"}。定植不要な作物はtransplantを「直播」としてください。`;
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
-      });
-      const data = await res.json();
-      const text = data.candidates[0].content.parts[0].text;
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+    setLoading(true);setResult(null);
+    const prompt=`あなたは日本の農業専門家です。兵庫県豊岡市（但馬地域）の農家からの質問に答えてください。野菜・ハーブ名：「${veggie}」。以下の形式でJSONのみを返してください（前後に説明文やマークダウン記号は不要）：{"name":"作物名","house":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"ハウス栽培ポイント50字以内"},"field":{"sowing":"播種時期","transplant":"定植時期","harvest":"収穫時期","notes":"露地栽培ポイント50字以内"},"tip":"但馬地域アドバイス80字以内","difficulty":"初級／中級／上級"}。定植不要な作物はtransplantを「直播」としてください。`;
+    try{
+      const text=await callGemini(prompt);
+      const parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
       setResult(parsed);
       setHistory(h=>[{veggie,result:parsed,id:Date.now()},...h.slice(0,9)]);
-    } catch { setResult({error:true}); }
-    setLoading(false); setVeggie("");
+    }catch{setResult({error:true});}
+    setLoading(false);setVeggie("");
   };
-
   const dC={"初級":"#43A047","中級":"#FB8C00","上級":"#E53935"};
-  return (
+  return(
     <div>
       <div style={{background:"linear-gradient(135deg,#00695C,#00897B)",borderRadius:16,padding:"16px",marginBottom:16,color:"#fff"}}>
         <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🌱 作付け時期アドバイザー</div>
@@ -422,16 +741,56 @@ function AiAdvisor() {
   );
 }
 
-function App() {
-  const [tab, setTab] = useState("diary");
-  const [diary, setDiary] = useStorage("farm_diary",[]);
-  const [shipment, setShipment] = useStorage("farm_shipment",[]);
-  const [agrochem, setAgrochem] = useStorage("farm_agrochem",[]);
-  const [todos, setTodos] = useStorage("farm_todos",[]);
-  const pending = todos.filter(t=>!t.done).length;
-  const active = TC[tab];
-  return (
-    <div style={{maxWidth:480,margin:"0 auto",background:"#f4f6f4",minHeight:"100vh"}}>
+// ── 設定 ────────────────────────────────────────────
+function Settings({crops,setCrops}){
+  const [newCrop,setNewCrop]=useState("");
+  const add=()=>{
+    const v=newCrop.trim();
+    if(!v||crops.includes(v)) return;
+    const idx=crops.indexOf("その他");
+    const next=[...crops];
+    if(idx>=0) next.splice(idx,0,v); else next.push(v);
+    setCrops(next);setNewCrop("");
+  };
+  const remove=c=>{if(c==="その他") return;setCrops(crops.filter(x=>x!==c));};
+  return(
+    <div>
+      <div style={{background:"linear-gradient(135deg,#546E7A,#607D8B)",borderRadius:16,padding:"16px",marginBottom:16,color:"#fff"}}>
+        <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>⚙️ 作物リストの管理</div>
+        <div style={{fontSize:12,opacity:0.8}}>作物の追加・削除ができます</div>
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <input style={{...INP,marginBottom:0,flex:1}} placeholder="例：ズッキーニ、しそ…" value={newCrop} onChange={e=>setNewCrop(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
+        <button onClick={add} disabled={!newCrop.trim()} style={{background:"#546E7A",color:"#fff",border:"none",borderRadius:12,padding:"0 16px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}>追加</button>
+      </div>
+      <div style={{background:"#fff",borderRadius:14,padding:"12px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+        {crops.map(c=>(
+          <div key={c} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 4px",borderBottom:"1px solid #f0f0f0"}}>
+            <span style={{fontSize:14}}>{c}</span>
+            {c!=="その他"&&<button onClick={()=>remove(c)} style={{background:"none",border:"none",color:"#ddd",fontSize:18,cursor:"pointer"}}>🗑</button>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── メインApp ────────────────────────────────────────
+function App(){
+  const [tab,setTab]=useState("diary");
+  const [diary,setDiary]=useStorage("farm_diary",[]);
+  const [shipment,setShipment]=useStorage("farm_shipment",[]);
+  const [todos,setTodos]=useStorage("farm_todos",[]);
+  const [crops,setCrops]=useStorage("farm_crops",DEFAULT_CROPS);
+  const [pesticides,setPesticides]=useStorage("farm_pesticides",[]);
+  const [fertilizers,setFertilizers]=useStorage("farm_fertilizers",[]);
+  const [others,setOthers]=useStorage("farm_others",[]);
+
+  const pending=todos.filter(t=>!t.done).length;
+  const active=TC[tab];
+
+  return(
+    <div style={{maxWidth:480,margin:"0 auto",background:"#f0f4f0",minHeight:"100vh"}}>
       <div style={{background:`linear-gradient(135deg,${active},${active}cc)`,padding:"14px 16px 12px",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
@@ -442,19 +801,20 @@ function App() {
         </div>
       </div>
       <div style={{padding:"14px 12px 100px"}}>
-        {tab==="diary"&&<Diary records={diary} setRecords={setDiary}/>}
+        {tab==="diary"&&<Diary records={diary} setRecords={setDiary} crops={crops} pesticides={pesticides} fertilizers={fertilizers}/>}
         {tab==="calendar"&&<Calendar diary={diary} shipment={shipment}/>}
-        {tab==="shipment"&&<Shipment records={shipment} setRecords={setShipment}/>}
-        {tab==="agrochem"&&<Agrochem records={agrochem} setRecords={setAgrochem}/>}
-        {tab==="todo"&&<Todo todos={todos} setTodos={setTodos}/>}
+        {tab==="shipment"&&<Shipment records={shipment} setRecords={setShipment} crops={crops}/>}
+        {tab==="zairyo"&&<Zairyo pesticides={pesticides} setPesticides={setPesticides} fertilizers={fertilizers} setFertilizers={setFertilizers} others={others} setOthers={setOthers} crops={crops} diary={diary}/>}
+        {tab==="todo"&&<Todo todos={todos} setTodos={setTodos} crops={crops}/>}
         {tab==="ai"&&<AiAdvisor/>}
+        {tab==="settings"&&<Settings crops={crops} setCrops={setCrops}/>}
       </div>
       <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"#fff",borderTop:"1px solid #eee",display:"flex",boxShadow:"0 -2px 12px rgba(0,0,0,0.08)",zIndex:10}}>
         {TABS.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"9px 2px 7px",border:"none",background:"none",cursor:"pointer",position:"relative",borderTop:tab===t.id?`3px solid ${TC[t.id]}`:"3px solid transparent"}}>
-            <div style={{fontSize:18}}>{t.icon}</div>
-            <div style={{fontSize:9,fontWeight:tab===t.id?700:400,color:tab===t.id?TC[t.id]:"#999",marginTop:1,lineHeight:1.2}}>{t.label}</div>
-            {t.id==="todo"&&pending>0&&<div style={{position:"absolute",top:5,right:"15%",background:"#E53935",color:"#fff",borderRadius:10,minWidth:15,height:15,fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px"}}>{pending}</div>}
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"8px 1px 6px",border:"none",background:"none",cursor:"pointer",position:"relative",borderTop:tab===t.id?`3px solid ${TC[t.id]}`:"3px solid transparent"}}>
+            <div style={{fontSize:16}}>{t.icon}</div>
+            <div style={{fontSize:8,fontWeight:tab===t.id?700:400,color:tab===t.id?TC[t.id]:"#999",marginTop:1,lineHeight:1.2}}>{t.label}</div>
+            {t.id==="todo"&&pending>0&&<div style={{position:"absolute",top:4,right:"10%",background:"#E53935",color:"#fff",borderRadius:10,minWidth:14,height:14,fontSize:8,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px"}}>{pending}</div>}
           </button>
         ))}
       </div>
@@ -466,8 +826,3 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
-```
-
-コードの3行目あたりにある
-```
-const GEMINI_API_KEY = "YOUR_API_KEY_HERE";
